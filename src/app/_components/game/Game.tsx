@@ -9,6 +9,7 @@ import {
   forwardRef,
   useImperativeHandle,
   useMemo,
+  useEffect,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
@@ -43,25 +44,58 @@ export function Game() {
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const orbitControlsRef = useRef<any>(null);
 
+  const [cursorX, setCursorX] = useState(0);
+  const [cursorZ, setCursorZ] = useState(0);
+  const [selectedBlock, setSelectedBlock] = useState(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") {
+        setCursorX((value) => value + 1);
+      }
+      if (e.key === "ArrowLeft") {
+        setCursorX((value) => value - 1);
+      }
+      if (e.key === "ArrowUp") {
+        setCursorZ((value) => value + 1);
+      }
+      if (e.key === "ArrowDown") {
+        setCursorZ((value) => value - 1);
+      }
+      if (e.key === " ") {
+        setSelectedBlock((value) => (value + 1) % gameState.nextBlocks.length);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return (
     <div className="w-full h-screen">
       <Canvas>
         <ambientLight intensity={0.5 * Math.PI} />
-        <GameBoard board={gameState.board} />
+        <GameBoard board={gameState.board} scale={0.5} />
         <BlocksRenderer
           orbitControlsRef={orbitControlsRef}
           blocks={gameState.nextBlocks}
+          selectedBlock={selectedBlock}
         />
-        <OrbitControls ref={orbitControlsRef} />
+        <OrbitControls ref={orbitControlsRef} enableZoom={false} />
         <Environment preset="city" />
       </Canvas>
     </div>
   );
 }
 
-const GameBoard = ({ board }: { board: boolean[][][] }) => {
+const GameBoard = ({
+  board,
+  scale,
+}: {
+  board: boolean[][][];
+  scale: number;
+}) => {
   return (
-    <group position={[0, 0, 0]}>
+    <group position={[0, 0, 0]} scale={scale}>
       {/* All cubes - transparent wireframes for empty spaces, solid for filled */}
       {board.map((layer, z) =>
         layer.map((row, y) =>
@@ -72,6 +106,7 @@ const GameBoard = ({ board }: { board: boolean[][][] }) => {
               boundingBoxDimensions={[8, 8, 8]}
               active={cell}
               isBottomLayer={y === 0}
+              selected={false}
             />
           ))
         )
@@ -85,14 +120,17 @@ const Cube = ({
   boundingBoxDimensions = [0, 0, 0],
   active,
   isBottomLayer,
+  selected,
 }: {
   position: [number, number, number];
   boundingBoxDimensions: [number, number, number];
   active: boolean;
   isBottomLayer: boolean;
+  selected: boolean;
 }) => {
-  const wireframe = useMemo(() => {
-    return (
+  // Solid cube for active positions
+  return (
+    <>
       <mesh
         position={[
           position[0] - boundingBoxDimensions[0] / 2,
@@ -100,38 +138,17 @@ const Cube = ({
           position[2] - boundingBoxDimensions[2] / 2,
         ]}
       >
-        <boxGeometry args={[1, 1, 1]} />
-        <meshBasicMaterial transparent opacity={0} />
-        <Edges color={isBottomLayer ? "#ff0000" : "#e2e8f0"} />
+        <boxGeometry args={[0.9, 0.9, 0.9]} />
+        <meshLambertMaterial
+          color={layerColors[position[1]]}
+          transparent
+          opacity={active ? 1 : 0.05}
+          emissive={selected ? layerColors[position[1]] : "#000000"}
+          emissiveIntensity={selected ? 1 : 0}
+        />
       </mesh>
-    );
-  }, [active, isBottomLayer, boundingBoxDimensions]);
-
-  if (active) {
-    // Solid cube for active positions
-    return (
-      <>
-        <mesh
-          position={[
-            position[0] - boundingBoxDimensions[0] / 2,
-            position[1] - boundingBoxDimensions[1] / 2,
-            position[2] - boundingBoxDimensions[2] / 2,
-          ]}
-        >
-          <boxGeometry args={[0.9, 0.9, 0.9]} />
-          <meshStandardMaterial
-            color={layerColors[position[1]]}
-            transparent
-            opacity={1}
-          />
-        </mesh>
-        {wireframe}
-      </>
-    );
-  } else {
-    // Wireframe cube for inactive positions - only outer edges
-    return wireframe;
-  }
+    </>
+  );
 };
 
 const calculateBlockDimensions = (block: boolean[][][]) => {
@@ -147,16 +164,15 @@ const BlockRenderer = forwardRef(
       block,
       position,
       scale = 1,
+      selected,
     }: {
       block: boolean[][][];
       position: [number, number, number];
       scale?: number;
+      selected: boolean;
     },
     fref
   ) => {
-    useFrame(() => {
-      console.log(block, xWidth, yHeight, zDepth);
-    });
     const { xWidth, yHeight, zDepth } = calculateBlockDimensions(block);
 
     const ref = useRef(null);
@@ -177,6 +193,7 @@ const BlockRenderer = forwardRef(
                   boundingBoxDimensions={[xWidth, yHeight, zDepth]}
                   active={cell}
                   isBottomLayer={y === 0}
+                  selected={selected}
                 />
               ))
             )
@@ -192,11 +209,13 @@ function BlocksRenderer({
   renderPriority = 1,
   matrix = new THREE.Matrix4(),
   blocks,
+  selectedBlock,
 }: {
   orbitControlsRef: React.RefObject<any>;
   renderPriority?: number;
   matrix?: THREE.Matrix4;
   blocks: boolean[][][][];
+  selectedBlock: number;
 }) {
   const blockGroups = useRef<THREE.Group[]>([]);
   const { viewport } = useThree();
@@ -207,16 +226,10 @@ function BlocksRenderer({
     const controls = orbitControlsRef.current;
 
     if (mainCamera && controls) {
-      // Calculate zoom based on distance from target
-      const distance = mainCamera.position.distanceTo(controls.target);
-      const baseDistance = 10; // Adjust this to match your initial camera distance
-      const zoom = baseDistance / distance;
-
       // Spin blockGroup to the inverse of the main camera's matrix
       matrix.copy(mainCamera.matrix).invert();
       blockGroups.current.forEach((group) => {
         group.quaternion.setFromRotationMatrix(matrix);
-        group.scale.set(zoom, zoom, zoom);
       });
     }
   });
@@ -240,9 +253,11 @@ function BlocksRenderer({
           block={block}
           position={[
             -(viewport.width / 2 - 1),
-            (viewport.height / 3 - 1) * index - (viewport.height / 3 - 1) - 1,
+            viewport.height / 2.5 - (viewport.height / 2.5 - 1) * index,
             0,
           ]}
+          scale={0.5}
+          selected={selectedBlock === index}
         />
       ))}
       <ambientLight intensity={1} />

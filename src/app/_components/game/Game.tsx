@@ -38,7 +38,6 @@ import {
   PerspectiveCamera,
   Text,
   Environment,
-  Edges,
   DragControls,
 } from "@react-three/drei";
 import { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -535,11 +534,165 @@ export function Game() {
   );
 }
 
+const GameBoardBoundingBox = () => {
+  const { camera } = useThree();
+  const [faceOpacities, setFaceOpacities] = useState({
+    xMin: 0.8,
+    xMax: 0.8,
+    yMin: 0.8,
+    yMax: 0.8,
+    zMin: 0.8,
+    zMax: 0.8,
+  });
+
+  const gridSize = COORDINATE_SYSTEM.GRID_SIZE;
+  const gridMin = -0.5;
+  const gridMax = gridSize - 0.5;
+  const center = COORDINATE_SYSTEM.GAME_BOARD_CENTER;
+
+  useFrame(() => {
+    // Calculate camera direction from game board center
+    const cameraDir = new THREE.Vector3()
+      .subVectors(camera.position, new THREE.Vector3(center, center, center))
+      .normalize();
+
+    // Face normals
+    const normals = {
+      xMin: new THREE.Vector3(-1, 0, 0),
+      xMax: new THREE.Vector3(1, 0, 0),
+      yMin: new THREE.Vector3(0, -1, 0),
+      yMax: new THREE.Vector3(0, 1, 0),
+      zMin: new THREE.Vector3(0, 0, -1),
+      zMax: new THREE.Vector3(0, 0, 1),
+    };
+
+    // Calculate opacity based on dot product (facing camera = positive)
+    const newOpacities = {
+      xMin: Math.max(0.15, normals.xMin.dot(cameraDir) * 0.8),
+      xMax: Math.max(0.15, normals.xMax.dot(cameraDir) * 0.8),
+      yMin: Math.max(0.15, normals.yMin.dot(cameraDir) * 0.8),
+      yMax: Math.max(0.15, normals.yMax.dot(cameraDir) * 0.8),
+      zMin: Math.max(0.15, normals.zMin.dot(cameraDir) * 0.8),
+      zMax: Math.max(0.15, normals.zMax.dot(cameraDir) * 0.8),
+    };
+
+    setFaceOpacities(newOpacities);
+  });
+
+  // Create grid lines for a face
+  const createGridLines = (
+    axis: "x" | "y" | "z",
+    position: number,
+    orientation: "horizontal" | "vertical",
+    opacity: number
+  ) => {
+    const lines: React.ReactElement[] = [];
+    const lineCount = gridSize + 1; // 9 lines for 8 cells
+
+    for (let i = 0; i < lineCount; i++) {
+      const offset = i - 0.5;
+      let point1: [number, number, number];
+      let point2: [number, number, number];
+
+      if (axis === "x") {
+        // YZ plane
+        if (orientation === "horizontal") {
+          // Lines parallel to Z axis
+          point1 = [position, offset, gridMin];
+          point2 = [position, offset, gridMax];
+        } else {
+          // Lines parallel to Y axis
+          point1 = [position, gridMin, offset];
+          point2 = [position, gridMax, offset];
+        }
+      } else if (axis === "y") {
+        // XZ plane
+        if (orientation === "horizontal") {
+          // Lines parallel to Z axis
+          point1 = [offset, position, gridMin];
+          point2 = [offset, position, gridMax];
+        } else {
+          // Lines parallel to X axis
+          point1 = [gridMin, position, offset];
+          point2 = [gridMax, position, offset];
+        }
+      } else {
+        // XY plane
+        if (orientation === "horizontal") {
+          // Lines parallel to Y axis
+          point1 = [offset, gridMin, position];
+          point2 = [offset, gridMax, position];
+        } else {
+          // Lines parallel to X axis
+          point1 = [gridMin, offset, position];
+          point2 = [gridMax, offset, position];
+        }
+      }
+
+      lines.push(
+        <line key={`${axis}-${position}-${orientation}-${i}`}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[
+                new Float32Array([
+                  point1[0],
+                  point1[1],
+                  point1[2],
+                  point2[0],
+                  point2[1],
+                  point2[2],
+                ]),
+                3,
+              ]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial
+            color="#333333"
+            opacity={opacity}
+            transparent
+            linewidth={2}
+            depthTest={false}
+            toneMapped={false}
+          />
+        </line>
+      );
+    }
+
+    return lines;
+  };
+
+  return (
+    <group>
+      {/* X faces (left and right) - YZ plane */}
+      {createGridLines("x", gridMin, "horizontal", faceOpacities.xMin)}
+      {createGridLines("x", gridMin, "vertical", faceOpacities.xMin)}
+      {createGridLines("x", gridMax, "horizontal", faceOpacities.xMax)}
+      {createGridLines("x", gridMax, "vertical", faceOpacities.xMax)}
+
+      {/* Y faces (bottom and top) - XZ plane */}
+      {createGridLines("y", gridMin, "horizontal", faceOpacities.yMin)}
+      {createGridLines("y", gridMin, "vertical", faceOpacities.yMin)}
+      {createGridLines("y", gridMax, "horizontal", faceOpacities.yMax)}
+      {createGridLines("y", gridMax, "vertical", faceOpacities.yMax)}
+
+      {/* Z faces (front and back) - XY plane */}
+      {createGridLines("z", gridMin, "horizontal", faceOpacities.zMin)}
+      {createGridLines("z", gridMin, "vertical", faceOpacities.zMin)}
+      {createGridLines("z", gridMax, "horizontal", faceOpacities.zMax)}
+      {createGridLines("z", gridMax, "vertical", faceOpacities.zMax)}
+    </group>
+  );
+};
+
 const GameBoard = ({ board }: { board: boolean[][][] }) => {
   const groupRef = useRef<THREE.Group>(null);
 
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
+      {/* Bounding box with grid patterns */}
+      <GameBoardBoundingBox />
+
       {/* All cubes - transparent wireframes for empty spaces, solid for filled */}
       {board.map((layer, z) =>
         layer.map((row, y) =>
@@ -872,6 +1025,418 @@ const DebugAxes = ({
   return null;
 };
 
+// Constants for floating block grid visualization
+const GRID_OPACITY = {
+  MIN: 0.15, // Back-facing grids
+  MAX: 0.6, // Front-facing grids
+  PLANE_MULTIPLIER: 0.5, // Plane opacity relative to grid lines
+} as const;
+
+const GRID_COLORS = {
+  VALID: "#00ff88", // Cyan/green for valid placement
+  INVALID: "#ff0000", // Red for out of bounds
+} as const;
+
+const GRID_LINE_WIDTH = 1;
+
+const FloatingBlockGridLines = ({
+  blockDimensions,
+  worldPosition,
+  block,
+  gameState,
+}: {
+  blockDimensions: { xWidth: number; yHeight: number; zDepth: number };
+  worldPosition: [number, number, number];
+  block: boolean[][][];
+  gameState: GameState;
+}) => {
+  const { camera } = useThree();
+  const [faceOpacities, setFaceOpacities] = useState<{
+    xMin: number;
+    xMax: number;
+    yMin: number;
+    yMax: number;
+    zMin: number;
+    zMax: number;
+  }>({
+    xMin: GRID_OPACITY.MAX,
+    xMax: GRID_OPACITY.MAX,
+    yMin: GRID_OPACITY.MAX,
+    yMax: GRID_OPACITY.MAX,
+    zMin: GRID_OPACITY.MAX,
+    zMax: GRID_OPACITY.MAX,
+  });
+
+  const { xWidth, yHeight, zDepth } = blockDimensions;
+  const xMin = worldPosition[0] - 0.5;
+  const xMax = worldPosition[0] + xWidth - 0.5;
+  const yMin = worldPosition[1] - 0.5;
+  const yMax = worldPosition[1] + yHeight - 0.5;
+  const zMin = worldPosition[2] - 0.5;
+  const zMax = worldPosition[2] + zDepth - 0.5;
+
+  // Get grid positions
+  const gridX = Math.round(worldPosition[0]);
+  const gridY = Math.round(worldPosition[1]);
+  const gridZ = Math.round(worldPosition[2]);
+
+  // Check if faces are outside the board bounds
+  const gameBoardMin = -0.5;
+  const gameBoardMax = COORDINATE_SYSTEM.GRID_SIZE - 0.5;
+
+  // Helper function to check if a face plane intersects with existing blocks
+  const checkFaceCollision = (
+    axis: "x" | "y" | "z",
+    facePosition: number
+  ): boolean => {
+    // Get the grid coordinate for this face
+    const faceGridCoord = Math.round(facePosition + 0.5);
+
+    // Check all cells in the block that would be at this face position
+    for (let blockZ = 0; blockZ < zDepth; blockZ++) {
+      for (let blockY = 0; blockY < yHeight; blockY++) {
+        for (let blockX = 0; blockX < xWidth; blockX++) {
+          if (block[blockZ]?.[blockY]?.[blockX]) {
+            const boardX = gridX + blockX;
+            const boardY = gridY + blockY;
+            const boardZ = gridZ + blockZ;
+
+            // Check if this block cell is at the face position
+            let atFace = false;
+            if (axis === "x" && boardX === faceGridCoord) atFace = true;
+            if (axis === "y" && boardY === faceGridCoord) atFace = true;
+            if (axis === "z" && boardZ === faceGridCoord) atFace = true;
+
+            if (atFace) {
+              // Check if there's a collision at this position
+              if (
+                boardX >= 0 &&
+                boardX < 8 &&
+                boardY >= 0 &&
+                boardY < 8 &&
+                boardZ >= 0 &&
+                boardZ < 8 &&
+                gameState.board[boardZ]?.[boardY]?.[boardX]
+              ) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  const isOutOfBounds = {
+    xMin: xMin < gameBoardMin || checkFaceCollision("x", xMin),
+    xMax: xMax > gameBoardMax || checkFaceCollision("x", xMax),
+    yMin: yMin < gameBoardMin || checkFaceCollision("y", yMin),
+    yMax: yMax > gameBoardMax || checkFaceCollision("y", yMax),
+    zMin: zMin < gameBoardMin || checkFaceCollision("z", zMin),
+    zMax: zMax > gameBoardMax || checkFaceCollision("z", zMax),
+  };
+
+  const centerX = (xMin + xMax) / 2;
+  const centerY = (yMin + yMax) / 2;
+  const centerZ = (zMin + zMax) / 2;
+
+  // Face normal vectors for each face
+  const FACE_NORMALS = {
+    xMin: new THREE.Vector3(-1, 0, 0),
+    xMax: new THREE.Vector3(1, 0, 0),
+    yMin: new THREE.Vector3(0, -1, 0),
+    yMax: new THREE.Vector3(0, 1, 0),
+    zMin: new THREE.Vector3(0, 0, -1),
+    zMax: new THREE.Vector3(0, 0, 1),
+  } as const;
+
+  useFrame(() => {
+    // Calculate camera direction from block center
+    const cameraDir = new THREE.Vector3()
+      .subVectors(camera.position, new THREE.Vector3(centerX, centerY, centerZ))
+      .normalize();
+
+    // Calculate opacity based on dot product (facing camera = positive)
+    const calculateFaceOpacity = (normal: THREE.Vector3) =>
+      Math.max(GRID_OPACITY.MIN, normal.dot(cameraDir) * GRID_OPACITY.MAX);
+
+    const newOpacities = {
+      xMin: calculateFaceOpacity(FACE_NORMALS.xMin),
+      xMax: calculateFaceOpacity(FACE_NORMALS.xMax),
+      yMin: calculateFaceOpacity(FACE_NORMALS.yMin),
+      yMax: calculateFaceOpacity(FACE_NORMALS.yMax),
+      zMin: calculateFaceOpacity(FACE_NORMALS.zMin),
+      zMax: calculateFaceOpacity(FACE_NORMALS.zMax),
+    };
+
+    setFaceOpacities(newOpacities);
+  });
+
+  // Create grid lines for the entire face (spanning the game board)
+  const createFaceGridLines = (
+    axis: "x" | "y" | "z",
+    position: number,
+    opacity: number,
+    isOutOfBounds: boolean
+  ) => {
+    const lines: React.ReactElement[] = [];
+    const gameBoardMin = -0.5;
+    const gameBoardMax = COORDINATE_SYSTEM.GRID_SIZE - 0.5;
+
+    const lineColor = isOutOfBounds ? GRID_COLORS.INVALID : GRID_COLORS.VALID;
+
+    // Draw lines across the entire game board at this block face
+    for (let i = 0; i <= COORDINATE_SYSTEM.GRID_SIZE; i++) {
+      const offset = i - 0.5;
+
+      if (axis === "x") {
+        // Horizontal lines (parallel to Z)
+        lines.push(
+          <line key={`${axis}-${position}-h-${i}`}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[
+                  new Float32Array([
+                    position,
+                    offset,
+                    gameBoardMin,
+                    position,
+                    offset,
+                    gameBoardMax,
+                  ]),
+                  3,
+                ]}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial
+              color={lineColor}
+              opacity={opacity}
+              transparent
+              linewidth={GRID_LINE_WIDTH}
+              depthTest={false}
+              toneMapped={false}
+            />
+          </line>
+        );
+        // Vertical lines (parallel to Y)
+        lines.push(
+          <line key={`${axis}-${position}-v-${i}`}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[
+                  new Float32Array([
+                    position,
+                    gameBoardMin,
+                    offset,
+                    position,
+                    gameBoardMax,
+                    offset,
+                  ]),
+                  3,
+                ]}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial
+              color={lineColor}
+              opacity={opacity}
+              transparent
+              linewidth={GRID_LINE_WIDTH}
+              depthTest={false}
+              toneMapped={false}
+            />
+          </line>
+        );
+      } else if (axis === "y") {
+        // Horizontal lines (parallel to Z)
+        lines.push(
+          <line key={`${axis}-${position}-h-${i}`}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[
+                  new Float32Array([
+                    offset,
+                    position,
+                    gameBoardMin,
+                    offset,
+                    position,
+                    gameBoardMax,
+                  ]),
+                  3,
+                ]}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial
+              color={lineColor}
+              opacity={opacity}
+              transparent
+              linewidth={GRID_LINE_WIDTH}
+              depthTest={false}
+              toneMapped={false}
+            />
+          </line>
+        );
+        // Vertical lines (parallel to X)
+        lines.push(
+          <line key={`${axis}-${position}-v-${i}`}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[
+                  new Float32Array([
+                    gameBoardMin,
+                    position,
+                    offset,
+                    gameBoardMax,
+                    position,
+                    offset,
+                  ]),
+                  3,
+                ]}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial
+              color={lineColor}
+              opacity={opacity}
+              transparent
+              linewidth={GRID_LINE_WIDTH}
+              depthTest={false}
+              toneMapped={false}
+            />
+          </line>
+        );
+      } else {
+        // Z axis
+        // Horizontal lines (parallel to Y)
+        lines.push(
+          <line key={`${axis}-${position}-h-${i}`}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[
+                  new Float32Array([
+                    offset,
+                    gameBoardMin,
+                    position,
+                    offset,
+                    gameBoardMax,
+                    position,
+                  ]),
+                  3,
+                ]}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial
+              color={lineColor}
+              opacity={opacity}
+              transparent
+              linewidth={GRID_LINE_WIDTH}
+              depthTest={false}
+              toneMapped={false}
+            />
+          </line>
+        );
+        // Vertical lines (parallel to X)
+        lines.push(
+          <line key={`${axis}-${position}-v-${i}`}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[
+                  new Float32Array([
+                    gameBoardMin,
+                    offset,
+                    position,
+                    gameBoardMax,
+                    offset,
+                    position,
+                  ]),
+                  3,
+                ]}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial
+              color={lineColor}
+              opacity={opacity}
+              transparent
+              linewidth={GRID_LINE_WIDTH}
+              depthTest={false}
+              toneMapped={false}
+            />
+          </line>
+        );
+      }
+    }
+
+    return lines;
+  };
+
+  const gameBoardSize = COORDINATE_SYSTEM.GRID_SIZE;
+  const gameBoardCenter = COORDINATE_SYSTEM.GAME_BOARD_CENTER;
+
+  // Helper function to create a face (gridlines + plane)
+  const createFace = (
+    axis: "x" | "y" | "z",
+    position: number,
+    faceKey: keyof typeof faceOpacities,
+    rotation: [number, number, number]
+  ) => {
+    const opacity = faceOpacities[faceKey];
+    const outOfBounds = isOutOfBounds[faceKey];
+    const color = outOfBounds ? GRID_COLORS.INVALID : GRID_COLORS.VALID;
+
+    // Calculate plane position based on axis
+    const planePosition: [number, number, number] =
+      axis === "x"
+        ? [position, gameBoardCenter, gameBoardCenter]
+        : axis === "y"
+        ? [gameBoardCenter, position, gameBoardCenter]
+        : [gameBoardCenter, gameBoardCenter, position];
+
+    return (
+      <group key={`face-${faceKey}`}>
+        {createFaceGridLines(axis, position, opacity, outOfBounds)}
+        <mesh position={planePosition} rotation={rotation}>
+          <planeGeometry args={[gameBoardSize, gameBoardSize]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={opacity * GRID_OPACITY.PLANE_MULTIPLIER}
+            side={THREE.DoubleSide}
+            depthTest={false}
+          />
+        </mesh>
+      </group>
+    );
+  };
+
+  // Face configuration: [axis, position, faceKey, rotation]
+  const faces: Array<
+    [
+      "x" | "y" | "z",
+      number,
+      keyof typeof faceOpacities,
+      [number, number, number]
+    ]
+  > = [
+    ["x", xMin, "xMin", [0, Math.PI / 2, 0]],
+    ["x", xMax, "xMax", [0, Math.PI / 2, 0]],
+    ["y", yMin, "yMin", [Math.PI / 2, 0, 0]],
+    ["y", yMax, "yMax", [Math.PI / 2, 0, 0]],
+    ["z", zMin, "zMin", [0, 0, 0]],
+    ["z", zMax, "zMax", [0, 0, 0]],
+  ];
+
+  return (
+    <group>
+      {faces.map(([axis, pos, key, rot]) => createFace(axis, pos, key, rot))}
+    </group>
+  );
+};
+
 const FloatingBlock = ({
   block,
   onDrag,
@@ -1068,33 +1633,40 @@ const FloatingBlock = ({
   ];
 
   const blockContent = (
-    <group ref={groupRef} position={worldPosition}>
-      <group position={[0, 0, 0]}>
-        {block.map((layer, z) =>
-          layer.map((row, y) =>
-            row.map((cell, x) => (
-              <mesh key={`${x}-${y}-${z}`} position={[x, y, z]}>
-                <boxGeometry
-                  args={[
-                    COORDINATE_SYSTEM.CUBE_SIZE,
-                    COORDINATE_SYSTEM.CUBE_SIZE,
-                    COORDINATE_SYSTEM.CUBE_SIZE,
-                  ]}
-                />
-                <meshLambertMaterial
-                  color={layerColors[y]}
-                  transparent
-                  opacity={cell ? 0.8 : 0}
-                  emissive={isValidPosition ? "#00ff00" : "#ff0000"}
-                  emissiveIntensity={0.5}
-                />
-                <Edges color={isValidPosition ? "#00ff00" : "#ff0000"} />
-              </mesh>
-            ))
-          )
-        )}
+    <>
+      <group ref={groupRef} position={worldPosition}>
+        <group position={[0, 0, 0]}>
+          {block.map((layer, z) =>
+            layer.map((row, y) =>
+              row.map((cell, x) => (
+                <mesh key={`${x}-${y}-${z}`} position={[x, y, z]}>
+                  <boxGeometry
+                    args={[
+                      COORDINATE_SYSTEM.CUBE_SIZE,
+                      COORDINATE_SYSTEM.CUBE_SIZE,
+                      COORDINATE_SYSTEM.CUBE_SIZE,
+                    ]}
+                  />
+                  <meshLambertMaterial
+                    color={layerColors[y]}
+                    transparent
+                    opacity={cell ? 0.8 : 0}
+                    emissive={isValidPosition ? "#00ff00" : "#ff0000"}
+                    emissiveIntensity={0.5}
+                  />
+                </mesh>
+              ))
+            )
+          )}
+        </group>
       </group>
-    </group>
+      <FloatingBlockGridLines
+        blockDimensions={{ xWidth, yHeight, zDepth }}
+        worldPosition={worldPosition}
+        block={block}
+        gameState={gameState}
+      />
+    </>
   );
 
   return interactionMode === "drag" ? (
@@ -1166,7 +1738,7 @@ const Cube = ({
         <meshLambertMaterial
           color={layerColors[position[1]]}
           transparent
-          opacity={active ? 1 : 0.05}
+          opacity={active ? 1 : 0}
           emissive={selected ? layerColors[position[1]] : "#000000"}
           emissiveIntensity={selected ? 1 : 0}
         />

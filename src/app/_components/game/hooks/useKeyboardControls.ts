@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { GameState, DebugMode } from "../types/game";
 import { getNextGameState } from "../utils/game-logic";
+import * as THREE from "three";
 
 export const useKeyboardControls = ({
   gameState,
@@ -14,6 +15,7 @@ export const useKeyboardControls = ({
   setGameState,
   setDragPosition,
   setInteractionMode,
+  orbitControlsRef,
 }: {
   gameState: GameState;
   blockGridX: number;
@@ -26,6 +28,7 @@ export const useKeyboardControls = ({
   setGameState: (value: GameState) => void;
   setDragPosition: (value: { x: number; y: number; z: number } | null) => void;
   setInteractionMode: (value: "orbit" | "drag") => void;
+  orbitControlsRef: React.RefObject<any>;
   getNextGameState: (
     gameState: GameState,
     blockGridX: number,
@@ -65,20 +68,53 @@ export const useKeyboardControls = ({
         e.preventDefault();
         setBlockGridY((value) => Math.max(0, value - 1));
       }
-      // X position controls
-      if (e.key === "ArrowRight") {
-        setBlockGridX((value) => Math.min(7, value + 1));
+
+      // Camera-relative position controls
+      const camera = orbitControlsRef.current?.object;
+      if (camera) {
+        // Helper function to apply movement with bounds checking
+        const applyMovement = (dx: number, dz: number) => {
+          const newX = blockGridX + dx;
+          const newZ = blockGridZ + dz;
+          setBlockGridX(Math.max(0, Math.min(7, newX)));
+          setBlockGridZ(Math.max(0, Math.min(7, newZ)));
+        };
+
+        // Get camera's forward direction (where it's looking)
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+
+        // Project forward vector onto XZ plane and normalize
+        forward.y = 0;
+        forward.normalize();
+
+        // Right vector is perpendicular to forward on XZ plane
+        const right = new THREE.Vector3(-forward.z, 0, forward.x);
+
+        // Choose dominant axis (only move in one direction at a time)
+        const getDominantDirection = (vector: THREE.Vector3) => {
+          if (Math.abs(vector.x) > Math.abs(vector.z)) {
+            return { x: Math.sign(vector.x), z: 0 };
+          }
+          return { x: 0, z: Math.sign(vector.z) };
+        };
+
+        // Arrow key controls (camera-relative, single axis)
+        if (e.key === "ArrowUp") {
+          const dir = getDominantDirection(forward);
+          applyMovement(-dir.x, dir.z);
+        } else if (e.key === "ArrowDown") {
+          const dir = getDominantDirection(forward);
+          applyMovement(dir.x, -dir.z);
+        } else if (e.key === "ArrowRight") {
+          const dir = getDominantDirection(right);
+          applyMovement(dir.x, -dir.z);
+        } else if (e.key === "ArrowLeft") {
+          const dir = getDominantDirection(right);
+          applyMovement(-dir.x, dir.z);
+        }
       }
-      if (e.key === "ArrowLeft") {
-        setBlockGridX((value) => Math.max(0, value - 1));
-      }
-      // Z position controls
-      if (e.key === "ArrowUp") {
-        setBlockGridZ((value) => Math.min(7, value + 1));
-      }
-      if (e.key === "ArrowDown") {
-        setBlockGridZ((value) => Math.max(0, value - 1));
-      }
+
       // Alternative Y controls (keeping PageUp/PageDown)
       if (e.key === "PageUp") {
         setBlockGridY((value) => Math.min(7, value + 1));
@@ -117,5 +153,6 @@ export const useKeyboardControls = ({
     setGameState,
     setDragPosition,
     setInteractionMode,
+    orbitControlsRef,
   ]);
 };

@@ -180,6 +180,6 @@ export const createInitialGameState = (): GameState => ({
     Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => false))
   ),
   nextBlocks: Array.from({ length: 3 }, () => getRandomBlock()),
-  activeBlock: null,
+  activeBlock: 0,
   score: 0,
 });

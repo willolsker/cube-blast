@@ -13,6 +13,7 @@ import { BlocksRenderer } from "./components/BlockPicker/BlocksRenderer";
 import { DebugAxes } from "./components/Debug/DebugAxes";
 import { ModeIndicator } from "./components/UI/ModeIndicator";
 import { Score } from "./components/UI/Score";
+import { ArrowKeyIndicators } from "./components/UI/ArrowKeyIndicators";
 import type {
   GameState,
   InteractionMode,
@@ -87,6 +88,7 @@ export function Game() {
     setGameState,
     setDragPosition,
     setInteractionMode,
+    orbitControlsRef,
     getNextGameState,
   });
 
@@ -101,11 +103,12 @@ export function Game() {
       <ModeIndicator interactionMode={interactionMode} debugMode={debugMode} />
 
       <Canvas
-        camera={{ position: [12, 12, 12], fov: 70 }}
+        camera={{ position: [12, 10, 12], fov: 70 }}
         onContextMenu={handleRightClick}
       >
         <ambientLight intensity={0.5 * Math.PI} />
         <GameBoard board={gameState.board} />
+        <ArrowKeyIndicators orbitControlsRef={orbitControlsRef} />
         <BlocksRenderer
           orbitControlsRef={orbitControlsRef}
           blocks={gameState.nextBlocks}

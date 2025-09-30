@@ -4,6 +4,7 @@ export interface GameState {
   board: ThreeDimensionalBooleanArray;
   nextBlocks: (ThreeDimensionalBooleanArray | null)[];
   activeBlock: number | null;
+  score: number;
 }
 
 export interface Position {

@@ -88,45 +88,73 @@ export const getNextGameState = (
     }
   }
 
-  // Check for completed layers and clear them
-  const layersToClear: number[] = [];
+  // Check for completed 1D lines and clear them
+  // Lines can be along X, Y, or Z axis
+
+  // Track which cubes to clear (using Set to avoid duplicates)
+  const cubesToClear = new Set<string>();
+
+  // Check X-axis lines (all cubes from x=0 to x=7 at specific y,z)
   for (let y = 0; y < 8; y++) {
-    let layerComplete = true;
     for (let z = 0; z < 8; z++) {
+      let lineComplete = true;
       for (let x = 0; x < 8; x++) {
         if (!newBoard[z]![y]![x]) {
-          layerComplete = false;
+          lineComplete = false;
           break;
         }
       }
-      if (!layerComplete) break;
-    }
-    if (layerComplete) {
-      layersToClear.push(y);
-    }
-  }
-
-  // Clear completed layers
-  for (const layerY of layersToClear) {
-    for (let z = 0; z < 8; z++) {
-      for (let x = 0; x < 8; x++) {
-        newBoard[z]![layerY]![x] = false;
-      }
-    }
-  }
-
-  // Drop blocks above cleared layers
-  for (const layerY of layersToClear) {
-    for (let y = layerY + 1; y < 8; y++) {
-      for (let z = 0; z < 8; z++) {
+      if (lineComplete) {
         for (let x = 0; x < 8; x++) {
-          if (newBoard[z]![y]![x]) {
-            newBoard[z]![y - 1]![x] = true;
-            newBoard[z]![y]![x] = false;
-          }
+          cubesToClear.add(`${x},${y},${z}`);
         }
       }
     }
+  }
+
+  // Check Y-axis lines (all cubes from y=0 to y=7 at specific x,z)
+  for (let x = 0; x < 8; x++) {
+    for (let z = 0; z < 8; z++) {
+      let lineComplete = true;
+      for (let y = 0; y < 8; y++) {
+        if (!newBoard[z]![y]![x]) {
+          lineComplete = false;
+          break;
+        }
+      }
+      if (lineComplete) {
+        for (let y = 0; y < 8; y++) {
+          cubesToClear.add(`${x},${y},${z}`);
+        }
+      }
+    }
+  }
+
+  // Check Z-axis lines (all cubes from z=0 to z=7 at specific x,y)
+  for (let x = 0; x < 8; x++) {
+    for (let y = 0; y < 8; y++) {
+      let lineComplete = true;
+      for (let z = 0; z < 8; z++) {
+        if (!newBoard[z]![y]![x]) {
+          lineComplete = false;
+          break;
+        }
+      }
+      if (lineComplete) {
+        for (let z = 0; z < 8; z++) {
+          cubesToClear.add(`${x},${y},${z}`);
+        }
+      }
+    }
+  }
+
+  // Clear all marked cubes
+  for (const cubeKey of cubesToClear) {
+    const coords = cubeKey.split(",").map(Number);
+    const x = coords[0]!;
+    const y = coords[1]!;
+    const z = coords[2]!;
+    newBoard[z]![y]![x] = false;
   }
 
   // Generate new next blocks (remove used block, add new one)
@@ -143,6 +171,7 @@ export const getNextGameState = (
     board: newBoard,
     nextBlocks: newNextBlocks,
     activeBlock: newActiveBlock,
+    score: gameState.score + cubesToClear.size * 100,
   };
 };
 
@@ -152,4 +181,5 @@ export const createInitialGameState = (): GameState => ({
   ),
   nextBlocks: Array.from({ length: 3 }, () => getRandomBlock()),
   activeBlock: null,
+  score: 0,
 });

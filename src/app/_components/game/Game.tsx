@@ -12,6 +12,7 @@ import { FloatingBlock } from "./components/FloatingBlock/FloatingBlock";
 import { BlocksRenderer } from "./components/BlockPicker/BlocksRenderer";
 import { DebugAxes } from "./components/Debug/DebugAxes";
 import { ModeIndicator } from "./components/UI/ModeIndicator";
+import { Score } from "./components/UI/Score";
 import type {
   GameState,
   InteractionMode,
@@ -93,6 +94,9 @@ export function Game() {
 
   return (
     <div className="w-full h-screen relative">
+      {/* Score display */}
+      <Score score={gameState.score} />
+
       {/* Mode indicator */}
       <ModeIndicator interactionMode={interactionMode} debugMode={debugMode} />
 

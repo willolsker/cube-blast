@@ -241,7 +241,7 @@ export function Game() {
         e.preventDefault();
         setCursorY((value) => Math.min(7, value + 1));
       }
-      if (e.shiftKey && e.key === " ") {
+      if (e.key === "Shift") {
         e.preventDefault();
         setCursorY((value) => Math.max(0, value - 1));
       }
@@ -466,7 +466,7 @@ const FloatingBlock = ({
 
         if (intersection) {
           const gridX = Math.round(intersection.x / 0.5 + 4);
-          const gridY = Math.round(intersection.y / 0.5 + 4);
+          const gridY = cursorPosition.y; // Keep current Y position instead of using intersection
           const gridZ = Math.round(intersection.z / 0.5 + 4);
           const clampedX = Math.max(0, Math.min(7, gridX));
           const clampedY = Math.max(0, Math.min(7, gridY));

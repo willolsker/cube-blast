@@ -1,6 +1,24 @@
 "use client";
 
 import * as THREE from "three";
+
+// Coordinate System Constants
+const COORDINATE_SYSTEM = {
+  GRID_SIZE: 8,
+  GRID_MIN: 0,
+  GRID_MAX: 7,
+  CUBE_SIZE: 0.9,
+  GAME_BOARD_CENTER: 3.5, // (GRID_SIZE - 1) / 2
+} as const;
+
+// Coordinate Helper Functions
+const gridToWorld = (gridPos: number) => gridPos;
+const worldToGrid = (worldPos: number) => worldPos;
+const clampGrid = (pos: number) =>
+  Math.max(
+    COORDINATE_SYSTEM.GRID_MIN,
+    Math.min(COORDINATE_SYSTEM.GRID_MAX, Math.round(pos))
+  );
 import {
   useRef,
   useState,
@@ -332,6 +350,10 @@ export function Game() {
   const [debugMode, setDebugMode] = useState<"off" | "gameboard" | "cursor">(
     "off"
   );
+  const [mousePosition, setMousePosition] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
 
   // Handle block pickup
   const handleBlockPickup = (blockIndex: number) => {
@@ -440,6 +462,23 @@ export function Game() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [gameState, blockGridX, blockGridY, blockGridZ, activeBlock]);
 
+  // Real-time mouse position tracking
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      // Convert screen coordinates to normalized device coordinates
+      const x = (event.clientX / window.innerWidth) * 2 - 1;
+      const y = -(event.clientY / window.innerHeight) * 2 + 1;
+      setMousePosition({ x, y });
+    };
+
+    // Add mouse move listener
+    window.addEventListener("mousemove", handleMouseMove);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+    };
+  }, []);
+
   return (
     <div className="w-full h-screen relative">
       {/* Mode indicator */}
@@ -458,11 +497,11 @@ export function Game() {
         </span>
       </div>
       <Canvas
-        camera={{ position: [5, 5, 5], fov: 60 }}
+        camera={{ position: [12, 12, 12], fov: 70 }}
         onContextMenu={handleRightClick}
       >
         <ambientLight intensity={0.5 * Math.PI} />
-        <GameBoard board={gameState.board} scale={0.5} />
+        <GameBoard board={gameState.board} />
         <BlocksRenderer
           orbitControlsRef={orbitControlsRef}
           blocks={gameState.nextBlocks}
@@ -479,6 +518,8 @@ export function Game() {
             interactionMode={interactionMode}
             cursorPosition={{ x: blockGridX, y: blockGridY, z: blockGridZ }}
             debugMode={debugMode}
+            mousePosition={mousePosition}
+            setMousePosition={setMousePosition}
           />
         )}
         {/* Debug axes - rendered at world level, not inside floating block */}
@@ -488,14 +529,19 @@ export function Game() {
             <DebugAxes
               debugMode={debugMode}
               cursorPosition={{ x: blockGridX, y: blockGridY, z: blockGridZ }}
-              mousePosition={(window as any).debugMousePosition}
+              mousePosition={mousePosition}
+              isDragging={true}
             />
           )}
         <OrbitControls
           ref={orbitControlsRef}
           enableZoom={false}
           enabled={interactionMode === "orbit"}
-          target={[0, 0, 0]}
+          target={[
+            COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+            COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+            COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+          ]}
           minPolarAngle={Math.PI / 6}
           maxPolarAngle={Math.PI - Math.PI / 6}
         />
@@ -505,17 +551,11 @@ export function Game() {
   );
 }
 
-const GameBoard = ({
-  board,
-  scale,
-}: {
-  board: boolean[][][];
-  scale: number;
-}) => {
+const GameBoard = ({ board }: { board: boolean[][][] }) => {
   const groupRef = useRef<THREE.Group>(null);
 
   return (
-    <group ref={groupRef} position={[0, 0, 0]} scale={scale}>
+    <group ref={groupRef} position={[0, 0, 0]}>
       {/* All cubes - transparent wireframes for empty spaces, solid for filled */}
       {board.map((layer, z) =>
         layer.map((row, y) =>
@@ -538,28 +578,24 @@ const DebugAxes = ({
   debugMode,
   cursorPosition,
   mousePosition,
+  isDragging = false,
 }: {
   debugMode: string;
   cursorPosition: { x: number; y: number; z: number };
   mousePosition?: { x: number; y: number };
+  isDragging?: boolean;
 }) => {
-  const [, forceUpdate] = useState({});
-  const { camera } = useThree();
-
-  // Force re-render when mouse position changes
-  useEffect(() => {
-    if (debugMode === "cursor") {
-      const interval = setInterval(() => {
-        forceUpdate({});
-      }, 16); // ~60fps
-      return () => clearInterval(interval);
-    }
-  }, [debugMode]);
+  const { camera, mouse } = useThree();
 
   if (debugMode === "off") return null;
 
+  // Use current mouse position from useThree() when dragging, otherwise use prop
+  const currentMousePosition = isDragging
+    ? { x: mouse.x, y: mouse.y }
+    : mousePosition;
+
   // Use shared function to calculate debug data with perfect parity
-  const debugData = calculateDebugAxesData(camera, mousePosition);
+  const debugData = calculateDebugAxesData(camera, currentMousePosition);
   const { screenProjections, axisBiasing } = debugData;
 
   if (debugMode === "gameboard") {
@@ -636,8 +672,10 @@ const DebugAxes = ({
     // Use mouse position if available, otherwise fall back to grid position
     let centerWorldPos: [number, number, number];
 
-    // Get mouse position from window object (updated in real time during drag)
-    const currentMousePosition = (window as any).debugMousePosition;
+    // Use current mouse position (from useThree() when dragging, otherwise from props)
+    const currentMousePosition = isDragging
+      ? { x: mouse.x, y: mouse.y }
+      : mousePosition;
 
     if (currentMousePosition) {
       // Mouse coordinates are in normalized device coordinates (-1 to 1)
@@ -657,23 +695,21 @@ const DebugAxes = ({
 
       // Check if the ray intersects the plane
       if (raycaster.ray.intersectPlane(plane, intersection)) {
-        // Convert world coordinates back to grid coordinates to match the game board
-        // The game board uses: worldPos = (gridPos - 4) * 0.5
-        // So: gridPos = worldPos / 0.5 + 4
-        const gridX = intersection.x / 0.5 + 4;
-        const gridY = intersection.y / 0.5 + 4;
-        const gridZ = intersection.z / 0.5 + 4;
+        // With no scaling, grid coordinates 0-7 map directly to world coordinates 0-7
+        const gridX = worldToGrid(intersection.x);
+        const gridY = worldToGrid(intersection.y);
+        const gridZ = worldToGrid(intersection.z);
 
         // Clamp to valid grid range
-        const clampedX = Math.max(0, Math.min(7, Math.round(gridX)));
-        const clampedY = Math.max(0, Math.min(7, Math.round(gridY)));
-        const clampedZ = Math.max(0, Math.min(7, Math.round(gridZ)));
+        const clampedX = clampGrid(gridX);
+        const clampedY = clampGrid(gridY);
+        const clampedZ = clampGrid(gridZ);
 
         // Convert back to world coordinates for display
         centerWorldPos = [
-          (clampedX - 4) * 0.5,
-          (clampedY - 4) * 0.5,
-          (clampedZ - 4) * 0.5,
+          gridToWorld(clampedX),
+          gridToWorld(clampedY),
+          gridToWorld(clampedZ),
         ];
       } else {
         // Fallback: project to a plane at the camera's distance
@@ -687,9 +723,9 @@ const DebugAxes = ({
     } else {
       // Fallback to grid position
       centerWorldPos = [
-        (cursorPosition.x - 4) * 0.5,
-        (cursorPosition.y - 4) * 0.5,
-        (cursorPosition.z - 4) * 0.5,
+        gridToWorld(cursorPosition.x),
+        gridToWorld(cursorPosition.y),
+        gridToWorld(cursorPosition.z),
       ];
     }
 
@@ -862,6 +898,8 @@ const FloatingBlock = ({
   interactionMode,
   cursorPosition,
   debugMode,
+  mousePosition,
+  setMousePosition,
 }: {
   block: boolean[][][];
   onDrag: (x: number, y: number, z: number) => void;
@@ -871,6 +909,8 @@ const FloatingBlock = ({
   interactionMode: "orbit" | "drag";
   cursorPosition: { x: number; y: number; z: number };
   debugMode: "off" | "gameboard" | "cursor";
+  mousePosition: { x: number; y: number };
+  setMousePosition: (position: { x: number; y: number }) => void;
 }) => {
   const { camera, raycaster, mouse } = useThree();
   const groupRef = useRef<THREE.Group>(null);
@@ -914,19 +954,25 @@ const FloatingBlock = ({
   // Determine position based on drag state
   const currentPosition = dragPosition || cursorPosition;
   const worldPosition: [number, number, number] = [
-    (currentPosition.x - 4) * 0.5,
-    (currentPosition.y - 4) * 0.5,
-    (currentPosition.z - 4) * 0.5,
+    gridToWorld(currentPosition.x),
+    gridToWorld(currentPosition.y),
+    gridToWorld(currentPosition.z),
   ];
 
   const blockContent = (
-    <group ref={groupRef} position={worldPosition} scale={0.5}>
+    <group ref={groupRef} position={worldPosition}>
       <group position={[0, 0, 0]}>
         {block.map((layer, z) =>
           layer.map((row, y) =>
             row.map((cell, x) => (
               <mesh key={`${x}-${y}-${z}`} position={[x, y, z]}>
-                <boxGeometry args={[0.9, 0.9, 0.9]} />
+                <boxGeometry
+                  args={[
+                    COORDINATE_SYSTEM.CUBE_SIZE,
+                    COORDINATE_SYSTEM.CUBE_SIZE,
+                    COORDINATE_SYSTEM.CUBE_SIZE,
+                  ]}
+                />
                 <meshLambertMaterial
                   color={layerColors[y]}
                   transparent
@@ -949,9 +995,10 @@ const FloatingBlock = ({
         console.log("DragControls onDrag event (Matrix4):", e);
         console.log("Mouse position:", mouse);
         console.log("Current cursor position:", cursorPosition);
+        console.log("Unified mouse position:", mousePosition);
 
-        // Store mouse position for debug axes
-        (window as any).debugMousePosition = { x: mouse.x, y: mouse.y };
+        // Update mouse position during dragging to keep grey dot following cursor
+        setMousePosition({ x: mouse.x, y: mouse.y });
 
         // Use shared helper functions for consistent calculations
         const gameBoardCenter = new THREE.Vector3(0, 0, 0);
@@ -965,7 +1012,7 @@ const FloatingBlock = ({
           gameBoardCenter
         );
 
-        // Calculate axis biasing
+        // Calculate axis biasing using the current mouse position from DragControls
         const axisBiasing = calculateAxisBiasing(
           mouse.x,
           mouse.y,
@@ -1015,12 +1062,12 @@ const FloatingBlock = ({
           calculatedWorld: { worldX, worldY, worldZ },
         });
 
-        const gridX = Math.round(worldX);
-        const gridY = Math.round(worldY);
-        const gridZ = Math.round(worldZ);
-        const clampedX = Math.max(0, Math.min(7, gridX));
-        const clampedY = Math.max(0, Math.min(7, gridY));
-        const clampedZ = Math.max(0, Math.min(7, gridZ));
+        const gridX = worldToGrid(worldX);
+        const gridY = worldToGrid(worldY);
+        const gridZ = worldToGrid(worldZ);
+        const clampedX = clampGrid(gridX);
+        const clampedY = clampGrid(gridY);
+        const clampedZ = clampGrid(gridZ);
 
         console.log(
           "Simplified drag:",
@@ -1059,14 +1106,14 @@ const Cube = ({
   // Solid cube for active positions
   return (
     <>
-      <mesh
-        position={[
-          position[0] - boundingBoxDimensions[0] / 2,
-          position[1] - boundingBoxDimensions[1] / 2,
-          position[2] - boundingBoxDimensions[2] / 2,
-        ]}
-      >
-        <boxGeometry args={[0.9, 0.9, 0.9]} />
+      <mesh position={position}>
+        <boxGeometry
+          args={[
+            COORDINATE_SYSTEM.CUBE_SIZE,
+            COORDINATE_SYSTEM.CUBE_SIZE,
+            COORDINATE_SYSTEM.CUBE_SIZE,
+          ]}
+        />
         <meshLambertMaterial
           color={layerColors[position[1]]}
           transparent
@@ -1121,7 +1168,9 @@ const PickupableBlock = forwardRef(
         ref={ref}
         onClick={handleClick}
       >
-        <group position={[0, 0, 0]}>
+        <group
+          position={[-(xWidth - 1) / 2, -(yHeight - 1) / 2, -(zDepth - 1) / 2]}
+        >
           {block.map((layer, z) =>
             layer.map((row, y) =>
               row.map((cell, x) => (

@@ -137,33 +137,13 @@ const calculateAxisBiasing = (
     mouseX * mouseSensitivity * screenProjections.screenXToWorldZ +
     mouseY * mouseSensitivity * screenProjections.screenYToWorldZ;
 
-  // Calculate the magnitude of movement in each axis
-  const axisMagnitudes = [Math.abs(rawX), Math.abs(rawY), Math.abs(rawZ)];
-  const maxMagnitude = Math.max(...axisMagnitudes);
-
-  // Exponential biasing: the stronger axis gets exponentially more influence
-  const biasStrength = 3.0; // Higher values = stronger biasing
-
-  // Avoid division by zero
-  const biasedX =
-    maxMagnitude > 0
-      ? rawX * Math.pow((axisMagnitudes[0] || 0) / maxMagnitude, biasStrength)
-      : rawX;
-  const biasedY =
-    maxMagnitude > 0
-      ? rawY * Math.pow((axisMagnitudes[1] || 0) / maxMagnitude, biasStrength)
-      : rawY;
-  const biasedZ =
-    maxMagnitude > 0
-      ? rawZ * Math.pow((axisMagnitudes[2] || 0) / maxMagnitude, biasStrength)
-      : rawZ;
-
+  // No biasing - just use raw movement
   return {
     rawMovement: { x: rawX, y: rawY, z: rawZ },
-    axisMagnitudes,
-    maxMagnitude,
-    biasStrength,
-    biasedMovement: { x: biasedX, y: biasedY, z: biasedZ },
+    axisMagnitudes: [Math.abs(rawX), Math.abs(rawY), Math.abs(rawZ)],
+    maxMagnitude: Math.max(Math.abs(rawX), Math.abs(rawY), Math.abs(rawZ)),
+    biasStrength: 0,
+    biasedMovement: { x: rawX, y: rawY, z: rawZ },
   };
 };
 
@@ -172,7 +152,11 @@ const calculateDebugAxesData = (
   camera: THREE.Camera,
   mousePosition?: { x: number; y: number }
 ) => {
-  const gameBoardCenter = new THREE.Vector3(0, 0, 0);
+  const gameBoardCenter = new THREE.Vector3(
+    COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+    COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+    COORDINATE_SYSTEM.GAME_BOARD_CENTER
+  );
 
   // Use current mouse position if available, otherwise use (0,0)
   const mouseX = mousePosition?.x || 0;
@@ -687,30 +671,29 @@ const DebugAxes = ({
       );
       raycaster.setFromCamera(mouseVector, camera);
 
-      // The game board is at Y=0 with scale 0.5, so the effective Y range is -1 to +1
-      // But we want to project onto the actual game board surface
-      // Since the game board is centered at [0,0,0] with scale 0.5, we can use Y=0
-      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      // The game board center is at Y=3.5 (GAME_BOARD_CENTER)
+      // We want to project onto a horizontal plane at the center of the game board
+      // Plane equation: normal dot (point - planePoint) = 0, which becomes: y - 3.5 = 0
+      const plane = new THREE.Plane(
+        new THREE.Vector3(0, 1, 0),
+        -COORDINATE_SYSTEM.GAME_BOARD_CENTER
+      );
       const intersection = new THREE.Vector3();
 
       // Check if the ray intersects the plane
       if (raycaster.ray.intersectPlane(plane, intersection)) {
-        // With no scaling, grid coordinates 0-7 map directly to world coordinates 0-7
-        const gridX = worldToGrid(intersection.x);
-        const gridY = worldToGrid(intersection.y);
-        const gridZ = worldToGrid(intersection.z);
+        // The intersection is in world space where cubes are at 0-7
+        // Just display the grey dot at the raw intersection point to see where it actually is
+        console.log(
+          "[DebugAxes] Raw intersection:",
+          intersection.x,
+          intersection.y,
+          intersection.z
+        );
 
-        // Clamp to valid grid range
-        const clampedX = clampGrid(gridX);
-        const clampedY = clampGrid(gridY);
-        const clampedZ = clampGrid(gridZ);
-
-        // Convert back to world coordinates for display
-        centerWorldPos = [
-          gridToWorld(clampedX),
-          gridToWorld(clampedY),
-          gridToWorld(clampedZ),
-        ];
+        // For now, just use the raw intersection to see where it appears
+        centerWorldPos = [intersection.x, intersection.y, intersection.z];
+        console.log("[DebugAxes] Using raw intersection as centerWorldPos");
       } else {
         // Fallback: project to a plane at the camera's distance
         const distance = camera.position.length();
@@ -1001,7 +984,11 @@ const FloatingBlock = ({
         setMousePosition({ x: mouse.x, y: mouse.y });
 
         // Use shared helper functions for consistent calculations
-        const gameBoardCenter = new THREE.Vector3(0, 0, 0);
+        const gameBoardCenter = new THREE.Vector3(
+          COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+          COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+          COORDINATE_SYSTEM.GAME_BOARD_CENTER
+        );
 
         // Calculate screen projections
         const screenProjections = calculateDragProjections(camera);

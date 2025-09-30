@@ -41,9 +41,9 @@ const initialGameState: GameState = {
 
 const getNextGameState = (
   gameState: GameState,
-  cursorX: number,
-  cursorY: number,
-  cursorZ: number,
+  blockGridX: number,
+  blockGridY: number,
+  blockGridZ: number,
   selectedBlock: number
 ) => {
   const newBoard = gameState.board.map((layer, z) =>
@@ -62,9 +62,9 @@ const getNextGameState = (
     for (let blockY = 0; blockY < blockDimensions.yHeight; blockY++) {
       for (let blockX = 0; blockX < blockDimensions.xWidth; blockX++) {
         if (block[blockZ]?.[blockY]?.[blockX]) {
-          const boardX = cursorX + blockX;
-          const boardY = cursorY + blockY;
-          const boardZ = cursorZ + blockZ;
+          const boardX = blockGridX + blockX;
+          const boardY = blockGridY + blockY;
+          const boardZ = blockGridZ + blockZ;
 
           // Check bounds
           if (
@@ -101,9 +101,9 @@ const getNextGameState = (
       for (let blockY = 0; blockY < blockDimensions.yHeight; blockY++) {
         for (let blockX = 0; blockX < blockDimensions.xWidth; blockX++) {
           if (block[blockZ]?.[blockY]?.[blockX]) {
-            const boardX = cursorX + blockX;
-            const boardY = cursorY + blockY;
-            const boardZ = cursorZ + blockZ;
+            const boardX = blockGridX + blockX;
+            const boardY = blockGridY + blockY;
+            const boardZ = blockGridZ + blockZ;
 
             if (
               boardX >= 0 &&
@@ -178,9 +178,9 @@ export function Game() {
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const orbitControlsRef = useRef<any>(null);
 
-  const [cursorX, setCursorX] = useState(0);
-  const [cursorY, setCursorY] = useState(0);
-  const [cursorZ, setCursorZ] = useState(0);
+  const [blockGridX, setBlockGridX] = useState(0);
+  const [blockGridY, setBlockGridY] = useState(0);
+  const [blockGridZ, setBlockGridZ] = useState(0);
   const [activeBlock, setActiveBlock] = useState<number | null>(null);
   const [dragPosition, setDragPosition] = useState<{
     x: number;
@@ -216,9 +216,9 @@ export function Game() {
   const handleBlockDrop = () => {
     if (dragPosition) {
       // Update cursor position to where the block was dragged
-      setCursorX(dragPosition.x);
-      setCursorY(dragPosition.y);
-      setCursorZ(dragPosition.z);
+      setBlockGridX(dragPosition.x);
+      setBlockGridY(dragPosition.y);
+      setBlockGridZ(dragPosition.z);
       console.log("Updated cursor to:", dragPosition); // Debug log
 
       // Clear drag position after using it
@@ -252,40 +252,40 @@ export function Game() {
       // Y position controls
       if (e.key === " ") {
         e.preventDefault();
-        setCursorY((value) => Math.min(7, value + 1));
+        setBlockGridY((value) => Math.min(7, value + 1));
       }
       if (e.key === "Shift") {
         e.preventDefault();
-        setCursorY((value) => Math.max(0, value - 1));
+        setBlockGridY((value) => Math.max(0, value - 1));
       }
       // X position controls
       if (e.key === "ArrowRight") {
-        setCursorX((value) => Math.min(7, value + 1));
+        setBlockGridX((value) => Math.min(7, value + 1));
       }
       if (e.key === "ArrowLeft") {
-        setCursorX((value) => Math.max(0, value - 1));
+        setBlockGridX((value) => Math.max(0, value - 1));
       }
       // Z position controls
       if (e.key === "ArrowUp") {
-        setCursorZ((value) => Math.min(7, value + 1));
+        setBlockGridZ((value) => Math.min(7, value + 1));
       }
       if (e.key === "ArrowDown") {
-        setCursorZ((value) => Math.max(0, value - 1));
+        setBlockGridZ((value) => Math.max(0, value - 1));
       }
       // Alternative Y controls (keeping PageUp/PageDown)
       if (e.key === "PageUp") {
-        setCursorY((value) => Math.min(7, value + 1));
+        setBlockGridY((value) => Math.min(7, value + 1));
       }
       if (e.key === "PageDown") {
-        setCursorY((value) => Math.max(0, value - 1));
+        setBlockGridY((value) => Math.max(0, value - 1));
       }
       if (e.key === "Enter" && activeBlock !== null) {
         // Place the block using keyboard
         const newGameState = getNextGameState(
           gameState,
-          cursorX,
-          cursorY,
-          cursorZ,
+          blockGridX,
+          blockGridY,
+          blockGridZ,
           activeBlock
         );
         setGameState(newGameState);
@@ -299,7 +299,7 @@ export function Game() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [gameState, cursorX, cursorY, cursorZ, activeBlock]);
+  }, [gameState, blockGridX, blockGridY, blockGridZ, activeBlock]);
 
   return (
     <div className="w-full h-screen relative">
@@ -338,10 +338,20 @@ export function Game() {
             gameState={gameState}
             dragPosition={dragPosition}
             interactionMode={interactionMode}
-            cursorPosition={{ x: cursorX, y: cursorY, z: cursorZ }}
+            cursorPosition={{ x: blockGridX, y: blockGridY, z: blockGridZ }}
             debugMode={debugMode}
           />
         )}
+        {/* Debug axes - rendered at world level, not inside floating block */}
+        {activeBlock !== null &&
+          interactionMode === "drag" &&
+          debugMode !== "off" && (
+            <DebugAxes
+              debugMode={debugMode}
+              cursorPosition={{ x: blockGridX, y: blockGridY, z: blockGridZ }}
+              mousePosition={(window as any).debugMousePosition}
+            />
+          )}
         <OrbitControls
           ref={orbitControlsRef}
           enableZoom={false}
@@ -388,11 +398,25 @@ const GameBoard = ({
 const DebugAxes = ({
   debugMode,
   cursorPosition,
+  mousePosition,
 }: {
   debugMode: string;
   cursorPosition: { x: number; y: number; z: number };
+  mousePosition?: { x: number; y: number };
 }) => {
   const debugInfo = (window as any).debugDragInfo;
+  const [, forceUpdate] = useState({});
+  const { camera } = useThree(); // Move this outside conditional
+
+  // Force re-render when mouse position changes
+  useEffect(() => {
+    if (debugMode === "cursor") {
+      const interval = setInterval(() => {
+        forceUpdate({});
+      }, 16); // ~60fps
+      return () => clearInterval(interval);
+    }
+  }, [debugMode]);
 
   if (debugMode === "off" || !debugInfo) return null;
 
@@ -469,14 +493,68 @@ const DebugAxes = ({
 
   if (debugMode === "cursor") {
     // Cursor centered axes - show actual drag directions
-    const cursorWorldPos: [number, number, number] = [
-      (cursorPosition.x - 4) * 0.5,
-      (cursorPosition.y - 4) * 0.5,
-      (cursorPosition.z - 4) * 0.5,
-    ];
+    // Use mouse position if available, otherwise fall back to grid position
+    let centerWorldPos: [number, number, number];
+
+    // Get mouse position from window object (updated in real time during drag)
+    const currentMousePosition = (window as any).debugMousePosition;
+
+    if (currentMousePosition) {
+      // Mouse coordinates are in normalized device coordinates (-1 to 1)
+      // setFromCamera expects NDC coordinates, so we can use them directly
+      const raycaster = new THREE.Raycaster();
+      const mouseVector = new THREE.Vector2(
+        currentMousePosition.x,
+        currentMousePosition.y
+      );
+      raycaster.setFromCamera(mouseVector, camera);
+
+      // The game board is at Y=0 with scale 0.5, so the effective Y range is -1 to +1
+      // But we want to project onto the actual game board surface
+      // Since the game board is centered at [0,0,0] with scale 0.5, we can use Y=0
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const intersection = new THREE.Vector3();
+
+      // Check if the ray intersects the plane
+      if (raycaster.ray.intersectPlane(plane, intersection)) {
+        // Convert world coordinates back to grid coordinates to match the game board
+        // The game board uses: worldPos = (gridPos - 4) * 0.5
+        // So: gridPos = worldPos / 0.5 + 4
+        const gridX = intersection.x / 0.5 + 4;
+        const gridY = intersection.y / 0.5 + 4;
+        const gridZ = intersection.z / 0.5 + 4;
+
+        // Clamp to valid grid range
+        const clampedX = Math.max(0, Math.min(7, Math.round(gridX)));
+        const clampedY = Math.max(0, Math.min(7, Math.round(gridY)));
+        const clampedZ = Math.max(0, Math.min(7, Math.round(gridZ)));
+
+        // Convert back to world coordinates for display
+        centerWorldPos = [
+          (clampedX - 4) * 0.5,
+          (clampedY - 4) * 0.5,
+          (clampedZ - 4) * 0.5,
+        ];
+      } else {
+        // Fallback: project to a plane at the camera's distance
+        const distance = camera.position.length();
+        const direction = raycaster.ray.direction
+          .clone()
+          .multiplyScalar(distance);
+        const point = raycaster.ray.origin.clone().add(direction);
+        centerWorldPos = [point.x, point.y, point.z];
+      }
+    } else {
+      // Fallback to grid position
+      centerWorldPos = [
+        (cursorPosition.x - 4) * 0.5,
+        (cursorPosition.y - 4) * 0.5,
+        (cursorPosition.z - 4) * 0.5,
+      ];
+    }
 
     return (
-      <group position={cursorWorldPos}>
+      <group position={centerWorldPos}>
         {/* Center point at cursor */}
         <mesh position={[0, 0, 0]}>
           <sphereGeometry args={[0.1, 8, 8]} />
@@ -651,8 +729,6 @@ const FloatingBlock = ({
           )
         )}
       </group>
-      {/* Debug axes - only show when dragging */}
-      <DebugAxes debugMode={debugMode} cursorPosition={cursorPosition} />
     </group>
   );
 
@@ -662,6 +738,9 @@ const FloatingBlock = ({
         console.log("DragControls onDrag event (Matrix4):", e);
         console.log("Mouse position:", mouse);
         console.log("Current cursor position:", cursorPosition);
+
+        // Store mouse position for debug axes
+        (window as any).debugMousePosition = { x: mouse.x, y: mouse.y };
 
         // True 1:1 edge-based drag system
 

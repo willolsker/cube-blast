@@ -39,6 +39,145 @@ const initialGameState: GameState = {
   nextBlocks: Array.from({ length: 4 }, () => getRandomBlock()),
 };
 
+// Shared helper functions for drag calculations
+const calculateDragProjections = (camera: THREE.Camera) => {
+  // Get camera's right and up vectors to determine screen edge directions
+  const cameraRight = new THREE.Vector3();
+  const cameraUp = new THREE.Vector3();
+  camera.matrixWorld.extractBasis(cameraRight, cameraUp, new THREE.Vector3());
+
+  // Calculate which world axes are most aligned with screen edges
+  const rightAxis = cameraRight.clone().normalize();
+  const upAxis = cameraUp.clone().normalize();
+
+  // Project screen directions onto world axes
+  // Screen X (right) projects onto world axes
+  const screenXToWorldX = rightAxis.x;
+  const screenXToWorldY = rightAxis.y;
+  const screenXToWorldZ = rightAxis.z;
+
+  // Screen Y (up) projects onto world axes
+  const screenYToWorldX = upAxis.x;
+  const screenYToWorldY = upAxis.y;
+  const screenYToWorldZ = upAxis.z;
+
+  return {
+    screenXToWorldX,
+    screenXToWorldY,
+    screenXToWorldZ,
+    screenYToWorldX,
+    screenYToWorldY,
+    screenYToWorldZ,
+    rightAxis,
+    upAxis,
+  };
+};
+
+const calculateMouseSensitivity = (
+  camera: THREE.Camera,
+  gameBoardCenter: THREE.Vector3
+) => {
+  // Calculate distance from camera to the game board center
+  const distanceToCamera = camera.position.distanceTo(gameBoardCenter);
+
+  // Calculate the size of one pixel in world space at the object's distance
+  const fovRadians = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180);
+  const screenHeight = 2 * Math.tan(fovRadians / 2) * distanceToCamera;
+  const pixelSize = screenHeight / window.innerHeight;
+
+  // Calculate ideal sensitivity for 1:1 grid movement
+  // We want 1 grid unit = 1 mouse unit, so we need to find the right multiplier
+  // Grid units are 0.5 world units apart (based on the game board scale)
+  const gridUnitSize = 0.5; // One grid unit in world space
+  const idealSensitivity = gridUnitSize / pixelSize; // How many pixels = 1 grid unit
+
+  // Use the ideal sensitivity, but cap it to reasonable bounds
+  const mouseSensitivity = Math.max(1, Math.min(1000, idealSensitivity));
+
+  return {
+    distanceToCamera,
+    screenHeight,
+    pixelSize,
+    mouseSensitivity,
+  };
+};
+
+const calculateAxisBiasing = (
+  mouseX: number,
+  mouseY: number,
+  mouseSensitivity: number,
+  screenProjections: ReturnType<typeof calculateDragProjections>
+) => {
+  // Calculate raw mouse movement contributions to each axis
+  const rawX =
+    mouseX * mouseSensitivity * screenProjections.screenXToWorldX +
+    mouseY * mouseSensitivity * screenProjections.screenYToWorldX;
+  const rawY =
+    mouseX * mouseSensitivity * screenProjections.screenXToWorldY +
+    mouseY * mouseSensitivity * screenProjections.screenYToWorldY;
+  const rawZ =
+    mouseX * mouseSensitivity * screenProjections.screenXToWorldZ +
+    mouseY * mouseSensitivity * screenProjections.screenYToWorldZ;
+
+  // Calculate the magnitude of movement in each axis
+  const axisMagnitudes = [Math.abs(rawX), Math.abs(rawY), Math.abs(rawZ)];
+  const maxMagnitude = Math.max(...axisMagnitudes);
+
+  // Exponential biasing: the stronger axis gets exponentially more influence
+  const biasStrength = 3.0; // Higher values = stronger biasing
+
+  // Avoid division by zero
+  const biasedX =
+    maxMagnitude > 0
+      ? rawX * Math.pow((axisMagnitudes[0] || 0) / maxMagnitude, biasStrength)
+      : rawX;
+  const biasedY =
+    maxMagnitude > 0
+      ? rawY * Math.pow((axisMagnitudes[1] || 0) / maxMagnitude, biasStrength)
+      : rawY;
+  const biasedZ =
+    maxMagnitude > 0
+      ? rawZ * Math.pow((axisMagnitudes[2] || 0) / maxMagnitude, biasStrength)
+      : rawZ;
+
+  return {
+    rawMovement: { x: rawX, y: rawY, z: rawZ },
+    axisMagnitudes,
+    maxMagnitude,
+    biasStrength,
+    biasedMovement: { x: biasedX, y: biasedY, z: biasedZ },
+  };
+};
+
+// Shared function to calculate debug axes data using the same logic as drag
+const calculateDebugAxesData = (
+  camera: THREE.Camera,
+  mousePosition?: { x: number; y: number }
+) => {
+  const gameBoardCenter = new THREE.Vector3(0, 0, 0);
+
+  // Use current mouse position if available, otherwise use (0,0)
+  const mouseX = mousePosition?.x || 0;
+  const mouseY = mousePosition?.y || 0;
+
+  // Calculate using the same shared functions
+  const screenProjections = calculateDragProjections(camera);
+  const sensitivityData = calculateMouseSensitivity(camera, gameBoardCenter);
+  const axisBiasing = calculateAxisBiasing(
+    mouseX,
+    mouseY,
+    sensitivityData.mouseSensitivity,
+    screenProjections
+  );
+
+  return {
+    gameBoardCenter,
+    screenProjections,
+    sensitivityData,
+    axisBiasing,
+  };
+};
+
 const getNextGameState = (
   gameState: GameState,
   blockGridX: number,
@@ -404,9 +543,8 @@ const DebugAxes = ({
   cursorPosition: { x: number; y: number; z: number };
   mousePosition?: { x: number; y: number };
 }) => {
-  const debugInfo = (window as any).debugDragInfo;
   const [, forceUpdate] = useState({});
-  const { camera } = useThree(); // Move this outside conditional
+  const { camera } = useThree();
 
   // Force re-render when mouse position changes
   useEffect(() => {
@@ -418,9 +556,11 @@ const DebugAxes = ({
     }
   }, [debugMode]);
 
-  if (debugMode === "off" || !debugInfo) return null;
+  if (debugMode === "off") return null;
 
-  const { screenProjections } = debugInfo;
+  // Use shared function to calculate debug data with perfect parity
+  const debugData = calculateDebugAxesData(camera, mousePosition);
+  const { screenProjections, axisBiasing } = debugData;
 
   if (debugMode === "gameboard") {
     // Game board centered axes (current behavior)
@@ -561,80 +701,151 @@ const DebugAxes = ({
           <meshBasicMaterial color="#ffffff" />
         </mesh>
 
-        {/* X direction (red) - shows where to move mouse to change X */}
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              args={[
-                new Float32Array([
-                  0,
-                  0,
-                  0,
-                  screenProjections.screenXToWorldX * 10,
-                  screenProjections.screenXToWorldY * 10,
-                  screenProjections.screenXToWorldZ * 10,
-                ]),
-                3,
-              ]}
-            />
-          </bufferGeometry>
-          <lineBasicMaterial color="#ff0000" linewidth={3} />
-        </line>
+        {/* Show biased directions if available, otherwise fall back to screen projections */}
+        {axisBiasing ? (
+          <>
+            {/* X direction (red) - shows biased X movement */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[
+                    new Float32Array([
+                      0,
+                      0,
+                      0,
+                      (axisBiasing?.biasedMovement.x || 0) * 10,
+                      0,
+                      0,
+                    ]),
+                    3,
+                  ]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#ff0000" linewidth={3} />
+            </line>
 
-        {/* Y direction (green) - shows where to move mouse to change Y */}
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              args={[
-                new Float32Array([
-                  0,
-                  0,
-                  0,
-                  screenProjections.screenYToWorldX * 10,
-                  screenProjections.screenYToWorldY * 10,
-                  screenProjections.screenYToWorldZ * 10,
-                ]),
-                3,
-              ]}
-            />
-          </bufferGeometry>
-          <lineBasicMaterial color="#00ff00" linewidth={3} />
-        </line>
+            {/* Y direction (green) - shows biased Y movement */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[
+                    new Float32Array([
+                      0,
+                      0,
+                      0,
+                      0,
+                      (axisBiasing?.biasedMovement.y || 0) * 10,
+                      0,
+                    ]),
+                    3,
+                  ]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#00ff00" linewidth={3} />
+            </line>
 
-        {/* Z direction (blue) - shows where to move mouse to change Z */}
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              args={[
-                new Float32Array([
-                  0,
-                  0,
-                  0,
-                  (screenProjections.screenXToWorldY *
-                    screenProjections.screenYToWorldZ -
-                    screenProjections.screenXToWorldZ *
-                      screenProjections.screenYToWorldY) *
-                    10,
-                  (screenProjections.screenXToWorldZ *
-                    screenProjections.screenYToWorldX -
-                    screenProjections.screenXToWorldX *
-                      screenProjections.screenYToWorldZ) *
-                    10,
-                  (screenProjections.screenXToWorldX *
-                    screenProjections.screenYToWorldY -
-                    screenProjections.screenXToWorldY *
-                      screenProjections.screenYToWorldX) *
-                    10,
-                ]),
-                3,
-              ]}
-            />
-          </bufferGeometry>
-          <lineBasicMaterial color="#0000ff" linewidth={3} />
-        </line>
+            {/* Z direction (blue) - shows biased Z movement */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[
+                    new Float32Array([
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      (axisBiasing?.biasedMovement.z || 0) * 10,
+                    ]),
+                    3,
+                  ]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#0000ff" linewidth={3} />
+            </line>
+          </>
+        ) : (
+          <>
+            {/* Fallback to screen projections */}
+            {/* X direction (red) - shows where to move mouse to change X */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[
+                    new Float32Array([
+                      0,
+                      0,
+                      0,
+                      screenProjections.screenXToWorldX * 10,
+                      screenProjections.screenXToWorldY * 10,
+                      screenProjections.screenXToWorldZ * 10,
+                    ]),
+                    3,
+                  ]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#ff0000" linewidth={3} />
+            </line>
+
+            {/* Y direction (green) - shows where to move mouse to change Y */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[
+                    new Float32Array([
+                      0,
+                      0,
+                      0,
+                      screenProjections.screenYToWorldX * 10,
+                      screenProjections.screenYToWorldY * 10,
+                      screenProjections.screenYToWorldZ * 10,
+                    ]),
+                    3,
+                  ]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#00ff00" linewidth={3} />
+            </line>
+
+            {/* Z direction (blue) - shows where to move mouse to change Z */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[
+                    new Float32Array([
+                      0,
+                      0,
+                      0,
+                      (screenProjections.screenXToWorldY *
+                        screenProjections.screenYToWorldZ -
+                        screenProjections.screenXToWorldZ *
+                          screenProjections.screenYToWorldY) *
+                        10,
+                      (screenProjections.screenXToWorldZ *
+                        screenProjections.screenYToWorldX -
+                        screenProjections.screenXToWorldX *
+                          screenProjections.screenYToWorldZ) *
+                        10,
+                      (screenProjections.screenXToWorldX *
+                        screenProjections.screenYToWorldY -
+                        screenProjections.screenXToWorldY *
+                          screenProjections.screenYToWorldX) *
+                        10,
+                    ]),
+                    3,
+                  ]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#0000ff" linewidth={3} />
+            </line>
+          </>
+        )}
       </group>
     );
   }
@@ -742,138 +953,64 @@ const FloatingBlock = ({
         // Store mouse position for debug axes
         (window as any).debugMousePosition = { x: mouse.x, y: mouse.y };
 
-        // True 1:1 edge-based drag system
-
-        // Use the game board center as the fixed reference point for perspective
-        // The game board is at world position [0, 0, 0] with scale 0.5
+        // Use shared helper functions for consistent calculations
         const gameBoardCenter = new THREE.Vector3(0, 0, 0);
 
-        // Calculate distance from camera to the game board center
-        const distanceToCamera = camera.position.distanceTo(gameBoardCenter);
+        // Calculate screen projections
+        const screenProjections = calculateDragProjections(camera);
 
-        console.log("Using game board center for perspective:", {
-          gameBoardCenter,
-          distanceToCamera,
-        });
-
-        // Debug info will be stored after variables are defined
-
-        // Calculate the size of one pixel in world space at the object's distance
-        const fovRadians =
-          (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180);
-        const screenHeight = 2 * Math.tan(fovRadians / 2) * distanceToCamera;
-        const pixelSize = screenHeight / window.innerHeight;
-
-        // Calculate ideal sensitivity for 1:1 grid movement
-        // We want 1 grid unit = 1 mouse unit, so we need to find the right multiplier
-        // Grid units are 0.5 world units apart (based on the game board scale)
-        const gridUnitSize = 0.5; // One grid unit in world space
-        const idealSensitivity = gridUnitSize / pixelSize; // How many pixels = 1 grid unit
-
-        // Use the ideal sensitivity, but cap it to reasonable bounds
-        const mouseSensitivity = Math.max(1, Math.min(1000, idealSensitivity));
-
-        console.log("Ideal sensitivity calculation:", {
-          pixelSize,
-          gridUnitSize,
-          idealSensitivity,
-          finalSensitivity: mouseSensitivity,
-        });
-
-        console.log("Pixel size calculation:", {
-          distanceToCamera,
-          screenHeight,
-          pixelSize,
-          mouseSensitivity,
-          windowHeight: window.innerHeight,
-          mouseX: mouse.x,
-          mouseY: mouse.y,
-        });
-
-        // Get camera's right and up vectors to determine screen edge directions
-        const cameraRight = new THREE.Vector3();
-        const cameraUp = new THREE.Vector3();
-        camera.matrixWorld.extractBasis(
-          cameraRight,
-          cameraUp,
-          new THREE.Vector3()
+        // Calculate mouse sensitivity
+        const sensitivityData = calculateMouseSensitivity(
+          camera,
+          gameBoardCenter
         );
 
-        // Calculate which world axes are most aligned with screen edges
-        const rightAxis = cameraRight.clone().normalize();
-        const upAxis = cameraUp.clone().normalize();
+        // Calculate axis biasing
+        const axisBiasing = calculateAxisBiasing(
+          mouse.x,
+          mouse.y,
+          sensitivityData.mouseSensitivity,
+          screenProjections
+        );
 
-        // Project screen directions onto world axes
-        // Screen X (right) projects onto world axes
-        const screenXToWorldX = rightAxis.x;
-        const screenXToWorldY = rightAxis.y;
-        const screenXToWorldZ = rightAxis.z;
-
-        // Screen Y (up) projects onto world axes
-        const screenYToWorldX = upAxis.x;
-        const screenYToWorldY = upAxis.y;
-        const screenYToWorldZ = upAxis.z;
-
-        console.log("Screen to world projections:", {
-          screenX: {
-            x: screenXToWorldX,
-            y: screenXToWorldY,
-            z: screenXToWorldZ,
-          },
-          screenY: {
-            x: screenYToWorldX,
-            y: screenYToWorldY,
-            z: screenYToWorldZ,
-          },
+        console.log("Drag calculation using shared helpers:", {
+          gameBoardCenter,
+          screenProjections,
+          sensitivityData,
+          axisBiasing,
         });
 
-        // Debug: Store info for visual display (after variables are defined)
+        // Debug: Store info for visual display
         (window as any).debugDragInfo = {
           center: gameBoardCenter,
           screenProjections: {
-            screenXToWorldX,
-            screenXToWorldY,
-            screenXToWorldZ,
-            screenYToWorldX,
-            screenYToWorldY,
-            screenYToWorldZ,
+            screenXToWorldX: screenProjections.screenXToWorldX,
+            screenXToWorldY: screenProjections.screenXToWorldY,
+            screenXToWorldZ: screenProjections.screenXToWorldZ,
+            screenYToWorldX: screenProjections.screenYToWorldX,
+            screenYToWorldY: screenProjections.screenYToWorldY,
+            screenYToWorldZ: screenProjections.screenYToWorldZ,
           },
-          mouseSensitivity,
+          mouseSensitivity: sensitivityData.mouseSensitivity,
+          axisBiasing,
         };
 
-        // Debug: Log the actual projection values to see what's happening
-        console.log("Debug axes values:", {
-          screenX: [screenXToWorldX, screenXToWorldY, screenXToWorldZ],
-          screenY: [screenYToWorldX, screenYToWorldY, screenYToWorldZ],
-          rightAxis: rightAxis,
-          upAxis: upAxis,
-        });
-
-        // Apply mouse movement to world coordinates based on screen edge directions
-        const worldX =
-          cursorPosition.x +
-          mouse.x * mouseSensitivity * screenXToWorldX +
-          mouse.y * mouseSensitivity * screenYToWorldX;
-        const worldY =
-          cursorPosition.y +
-          mouse.x * mouseSensitivity * screenXToWorldY +
-          mouse.y * mouseSensitivity * screenYToWorldY;
-        const worldZ =
-          cursorPosition.z +
-          mouse.x * mouseSensitivity * screenXToWorldZ +
-          mouse.y * mouseSensitivity * screenYToWorldZ;
+        // Apply biased movement to world coordinates
+        const worldX = cursorPosition.x + axisBiasing.biasedMovement.x;
+        const worldY = cursorPosition.y + axisBiasing.biasedMovement.y;
+        const worldZ = cursorPosition.z + axisBiasing.biasedMovement.z;
 
         console.log("World coordinate calculation:", {
           cursorPosition,
           mouseMovement: { x: mouse.x, y: mouse.y },
-          mouseSensitivity,
+          mouseSensitivity: sensitivityData.mouseSensitivity,
           screenProjections: {
-            screenXToWorldX,
-            screenXToWorldY,
-            screenXToWorldZ,
-            screenYToWorldX,
-            screenYToWorldY,
-            screenYToWorldZ,
+            screenXToWorldX: screenProjections.screenXToWorldX,
+            screenXToWorldY: screenProjections.screenXToWorldY,
+            screenXToWorldZ: screenProjections.screenXToWorldZ,
+            screenYToWorldX: screenProjections.screenYToWorldX,
+            screenYToWorldY: screenProjections.screenYToWorldY,
+            screenYToWorldZ: screenProjections.screenYToWorldZ,
           },
           calculatedWorld: { worldX, worldY, worldZ },
         });

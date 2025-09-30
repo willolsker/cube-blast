@@ -23,8 +23,8 @@ export const possibleBlocks: boolean[][][][] = [
       [true, true, true],
     ],
   ],
-  // Rectangular prism 1L 8W 1H
-  [[[true, true, true, true, true, true, true, true]]],
+  // Rectangular prism 1L 4W 1H
+  [[[true, true, true, true]]],
   // L block
   [
     [

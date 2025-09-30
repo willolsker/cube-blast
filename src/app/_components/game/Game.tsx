@@ -190,6 +190,9 @@ export function Game() {
   const [interactionMode, setInteractionMode] = useState<"orbit" | "drag">(
     "orbit"
   );
+  const [debugMode, setDebugMode] = useState<"off" | "gameboard" | "cursor">(
+    "off"
+  );
 
   // Handle block pickup
   const handleBlockPickup = (blockIndex: number) => {
@@ -229,6 +232,16 @@ export function Game() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Debug mode cycling with D key
+      if (e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        setDebugMode((current) => {
+          if (current === "off") return "gameboard";
+          if (current === "gameboard") return "cursor";
+          return "off";
+        });
+      }
+
       // Block cycling with Tab instead of Space
       if (e.key === "Tab") {
         e.preventDefault(); // Prevent tab from moving focus
@@ -293,6 +306,17 @@ export function Game() {
       {/* Mode indicator */}
       <div className="absolute top-4 right-4 z-10 bg-black bg-opacity-50 text-white px-3 py-2 rounded-lg font-mono text-sm">
         Mode: {interactionMode === "orbit" ? "Orbit" : "Drag"}
+        <br />
+        Debug:{" "}
+        {debugMode === "off"
+          ? "Off"
+          : debugMode === "gameboard"
+          ? "Game Board"
+          : "Cursor"}
+        <br />
+        <span className="text-xs text-gray-300">
+          Press D to cycle debug modes
+        </span>
       </div>
       <Canvas
         camera={{ position: [5, 5, 5], fov: 60 }}
@@ -315,6 +339,7 @@ export function Game() {
             dragPosition={dragPosition}
             interactionMode={interactionMode}
             cursorPosition={{ x: cursorX, y: cursorY, z: cursorZ }}
+            debugMode={debugMode}
           />
         )}
         <OrbitControls
@@ -360,6 +385,185 @@ const GameBoard = ({
   );
 };
 
+const DebugAxes = ({
+  debugMode,
+  cursorPosition,
+}: {
+  debugMode: string;
+  cursorPosition: { x: number; y: number; z: number };
+}) => {
+  const debugInfo = (window as any).debugDragInfo;
+
+  if (debugMode === "off" || !debugInfo) return null;
+
+  const { screenProjections } = debugInfo;
+
+  if (debugMode === "gameboard") {
+    // Game board centered axes (current behavior)
+    return (
+      <group position={[0, 0, 0]}>
+        {/* Center point */}
+        <mesh position={[0, 0, 0]}>
+          <sphereGeometry args={[0.1, 8, 8]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+
+        {/* Screen X direction (red) - shows where mouse X movement goes */}
+        <line>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[
+                new Float32Array([
+                  0,
+                  0,
+                  0,
+                  screenProjections.screenXToWorldX * 10,
+                  screenProjections.screenXToWorldY * 10,
+                  screenProjections.screenXToWorldZ * 10,
+                ]),
+                3,
+              ]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#ff0000" linewidth={3} />
+        </line>
+
+        {/* Screen Y direction (green) - shows where mouse Y movement goes */}
+        <line>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[
+                new Float32Array([
+                  0,
+                  0,
+                  0,
+                  screenProjections.screenYToWorldX * 10,
+                  screenProjections.screenYToWorldY * 10,
+                  screenProjections.screenYToWorldZ * 10,
+                ]),
+                3,
+              ]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#00ff00" linewidth={3} />
+        </line>
+
+        {/* World axes for reference */}
+        <mesh position={[2, 0, 0]}>
+          <boxGeometry args={[0.05, 0.05, 0.5]} />
+          <meshBasicMaterial color="#ffaaaa" />
+        </mesh>
+        <mesh position={[0, 2, 0]}>
+          <boxGeometry args={[0.05, 0.05, 0.5]} />
+          <meshBasicMaterial color="#aaffaa" />
+        </mesh>
+        <mesh position={[0, 0, 2]}>
+          <boxGeometry args={[0.05, 0.05, 0.5]} />
+          <meshBasicMaterial color="#aaaaff" />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (debugMode === "cursor") {
+    // Cursor centered axes - show actual drag directions
+    const cursorWorldPos: [number, number, number] = [
+      (cursorPosition.x - 4) * 0.5,
+      (cursorPosition.y - 4) * 0.5,
+      (cursorPosition.z - 4) * 0.5,
+    ];
+
+    return (
+      <group position={cursorWorldPos}>
+        {/* Center point at cursor */}
+        <mesh position={[0, 0, 0]}>
+          <sphereGeometry args={[0.1, 8, 8]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+
+        {/* X direction (red) - shows where to move mouse to change X */}
+        <line>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[
+                new Float32Array([
+                  0,
+                  0,
+                  0,
+                  screenProjections.screenXToWorldX * 10,
+                  screenProjections.screenXToWorldY * 10,
+                  screenProjections.screenXToWorldZ * 10,
+                ]),
+                3,
+              ]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#ff0000" linewidth={3} />
+        </line>
+
+        {/* Y direction (green) - shows where to move mouse to change Y */}
+        <line>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[
+                new Float32Array([
+                  0,
+                  0,
+                  0,
+                  screenProjections.screenYToWorldX * 10,
+                  screenProjections.screenYToWorldY * 10,
+                  screenProjections.screenYToWorldZ * 10,
+                ]),
+                3,
+              ]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#00ff00" linewidth={3} />
+        </line>
+
+        {/* Z direction (blue) - shows where to move mouse to change Z */}
+        <line>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[
+                new Float32Array([
+                  0,
+                  0,
+                  0,
+                  (screenProjections.screenXToWorldY *
+                    screenProjections.screenYToWorldZ -
+                    screenProjections.screenXToWorldZ *
+                      screenProjections.screenYToWorldY) *
+                    10,
+                  (screenProjections.screenXToWorldZ *
+                    screenProjections.screenYToWorldX -
+                    screenProjections.screenXToWorldX *
+                      screenProjections.screenYToWorldZ) *
+                    10,
+                  (screenProjections.screenXToWorldX *
+                    screenProjections.screenYToWorldY -
+                    screenProjections.screenXToWorldY *
+                      screenProjections.screenYToWorldX) *
+                    10,
+                ]),
+                3,
+              ]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#0000ff" linewidth={3} />
+        </line>
+      </group>
+    );
+  }
+
+  return null;
+};
+
 const FloatingBlock = ({
   block,
   onDrag,
@@ -368,6 +572,7 @@ const FloatingBlock = ({
   dragPosition,
   interactionMode,
   cursorPosition,
+  debugMode,
 }: {
   block: boolean[][][];
   onDrag: (x: number, y: number, z: number) => void;
@@ -376,6 +581,7 @@ const FloatingBlock = ({
   dragPosition: { x: number; y: number; z: number } | null;
   interactionMode: "orbit" | "drag";
   cursorPosition: { x: number; y: number; z: number };
+  debugMode: "off" | "gameboard" | "cursor";
 }) => {
   const { camera, raycaster, mouse } = useThree();
   const groupRef = useRef<THREE.Group>(null);
@@ -445,6 +651,8 @@ const FloatingBlock = ({
           )
         )}
       </group>
+      {/* Debug axes - only show when dragging */}
+      <DebugAxes debugMode={debugMode} cursorPosition={cursorPosition} />
     </group>
   );
 
@@ -452,35 +660,161 @@ const FloatingBlock = ({
     <DragControls
       onDrag={(e) => {
         console.log("DragControls onDrag event (Matrix4):", e);
-
-        // Try using mouse position to calculate world position
-        raycaster.setFromCamera(mouse, camera);
-
-        // Create a plane at Y=0 to intersect with
-        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-        const intersection = new THREE.Vector3();
-        raycaster.ray.intersectPlane(plane, intersection);
-
         console.log("Mouse position:", mouse);
-        console.log("Raycaster intersection:", intersection);
+        console.log("Current cursor position:", cursorPosition);
 
-        if (intersection) {
-          const gridX = Math.round(intersection.x / 0.5 + 4);
-          const gridY = cursorPosition.y; // Keep current Y position instead of using intersection
-          const gridZ = Math.round(intersection.z / 0.5 + 4);
-          const clampedX = Math.max(0, Math.min(7, gridX));
-          const clampedY = Math.max(0, Math.min(7, gridY));
-          const clampedZ = Math.max(0, Math.min(7, gridZ));
-          console.log(
-            "Mouse-based drag - intersection:",
-            intersection,
-            "grid:",
-            { gridX, gridY, gridZ },
-            "clamped:",
-            { clampedX, clampedY, clampedZ }
-          );
-          onDrag(clampedX, clampedY, clampedZ);
-        }
+        // True 1:1 edge-based drag system
+
+        // Use the game board center as the fixed reference point for perspective
+        // The game board is at world position [0, 0, 0] with scale 0.5
+        const gameBoardCenter = new THREE.Vector3(0, 0, 0);
+
+        // Calculate distance from camera to the game board center
+        const distanceToCamera = camera.position.distanceTo(gameBoardCenter);
+
+        console.log("Using game board center for perspective:", {
+          gameBoardCenter,
+          distanceToCamera,
+        });
+
+        // Debug info will be stored after variables are defined
+
+        // Calculate the size of one pixel in world space at the object's distance
+        const fovRadians =
+          (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180);
+        const screenHeight = 2 * Math.tan(fovRadians / 2) * distanceToCamera;
+        const pixelSize = screenHeight / window.innerHeight;
+
+        // Calculate ideal sensitivity for 1:1 grid movement
+        // We want 1 grid unit = 1 mouse unit, so we need to find the right multiplier
+        // Grid units are 0.5 world units apart (based on the game board scale)
+        const gridUnitSize = 0.5; // One grid unit in world space
+        const idealSensitivity = gridUnitSize / pixelSize; // How many pixels = 1 grid unit
+
+        // Use the ideal sensitivity, but cap it to reasonable bounds
+        const mouseSensitivity = Math.max(1, Math.min(1000, idealSensitivity));
+
+        console.log("Ideal sensitivity calculation:", {
+          pixelSize,
+          gridUnitSize,
+          idealSensitivity,
+          finalSensitivity: mouseSensitivity,
+        });
+
+        console.log("Pixel size calculation:", {
+          distanceToCamera,
+          screenHeight,
+          pixelSize,
+          mouseSensitivity,
+          windowHeight: window.innerHeight,
+          mouseX: mouse.x,
+          mouseY: mouse.y,
+        });
+
+        // Get camera's right and up vectors to determine screen edge directions
+        const cameraRight = new THREE.Vector3();
+        const cameraUp = new THREE.Vector3();
+        camera.matrixWorld.extractBasis(
+          cameraRight,
+          cameraUp,
+          new THREE.Vector3()
+        );
+
+        // Calculate which world axes are most aligned with screen edges
+        const rightAxis = cameraRight.clone().normalize();
+        const upAxis = cameraUp.clone().normalize();
+
+        // Project screen directions onto world axes
+        // Screen X (right) projects onto world axes
+        const screenXToWorldX = rightAxis.x;
+        const screenXToWorldY = rightAxis.y;
+        const screenXToWorldZ = rightAxis.z;
+
+        // Screen Y (up) projects onto world axes
+        const screenYToWorldX = upAxis.x;
+        const screenYToWorldY = upAxis.y;
+        const screenYToWorldZ = upAxis.z;
+
+        console.log("Screen to world projections:", {
+          screenX: {
+            x: screenXToWorldX,
+            y: screenXToWorldY,
+            z: screenXToWorldZ,
+          },
+          screenY: {
+            x: screenYToWorldX,
+            y: screenYToWorldY,
+            z: screenYToWorldZ,
+          },
+        });
+
+        // Debug: Store info for visual display (after variables are defined)
+        (window as any).debugDragInfo = {
+          center: gameBoardCenter,
+          screenProjections: {
+            screenXToWorldX,
+            screenXToWorldY,
+            screenXToWorldZ,
+            screenYToWorldX,
+            screenYToWorldY,
+            screenYToWorldZ,
+          },
+          mouseSensitivity,
+        };
+
+        // Debug: Log the actual projection values to see what's happening
+        console.log("Debug axes values:", {
+          screenX: [screenXToWorldX, screenXToWorldY, screenXToWorldZ],
+          screenY: [screenYToWorldX, screenYToWorldY, screenYToWorldZ],
+          rightAxis: rightAxis,
+          upAxis: upAxis,
+        });
+
+        // Apply mouse movement to world coordinates based on screen edge directions
+        const worldX =
+          cursorPosition.x +
+          mouse.x * mouseSensitivity * screenXToWorldX +
+          mouse.y * mouseSensitivity * screenYToWorldX;
+        const worldY =
+          cursorPosition.y +
+          mouse.x * mouseSensitivity * screenXToWorldY +
+          mouse.y * mouseSensitivity * screenYToWorldY;
+        const worldZ =
+          cursorPosition.z +
+          mouse.x * mouseSensitivity * screenXToWorldZ +
+          mouse.y * mouseSensitivity * screenYToWorldZ;
+
+        console.log("World coordinate calculation:", {
+          cursorPosition,
+          mouseMovement: { x: mouse.x, y: mouse.y },
+          mouseSensitivity,
+          screenProjections: {
+            screenXToWorldX,
+            screenXToWorldY,
+            screenXToWorldZ,
+            screenYToWorldX,
+            screenYToWorldY,
+            screenYToWorldZ,
+          },
+          calculatedWorld: { worldX, worldY, worldZ },
+        });
+
+        const gridX = Math.round(worldX);
+        const gridY = Math.round(worldY);
+        const gridZ = Math.round(worldZ);
+        const clampedX = Math.max(0, Math.min(7, gridX));
+        const clampedY = Math.max(0, Math.min(7, gridY));
+        const clampedZ = Math.max(0, Math.min(7, gridZ));
+
+        console.log(
+          "Simplified drag:",
+          { mouseX: mouse.x, mouseY: mouse.y },
+          { worldX, worldY, worldZ },
+          { gridX, gridY, gridZ },
+          { clampedX, clampedY, clampedZ }
+        );
+
+        onDrag(clampedX, clampedY, clampedZ);
       }}
       onDragEnd={() => {
         console.log("DragControls onDragEnd called");

@@ -3,6 +3,7 @@ export type ThreeDimensionalBooleanArray = boolean[][][];
 export interface GameState {
   board: ThreeDimensionalBooleanArray;
   nextBlocks: (ThreeDimensionalBooleanArray | null)[];
+  activeBlock: number | null;
 }
 
 export interface Position {

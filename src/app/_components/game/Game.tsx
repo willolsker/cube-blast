@@ -28,7 +28,6 @@ export function Game() {
   const [blockGridX, setBlockGridX] = useState(0);
   const [blockGridY, setBlockGridY] = useState(0);
   const [blockGridZ, setBlockGridZ] = useState(0);
-  const [activeBlock, setActiveBlock] = useState<number | null>(null);
   const [dragPosition, setDragPosition] = useState<Position | null>(null);
   const [interactionMode, setInteractionMode] =
     useState<InteractionMode>("orbit");
@@ -40,7 +39,7 @@ export function Game() {
 
   // Handle block pickup
   const handleBlockPickup = (blockIndex: number) => {
-    setActiveBlock(blockIndex);
+    setGameState({ ...gameState, activeBlock: blockIndex });
     setInteractionMode("drag");
   };
 
@@ -80,11 +79,9 @@ export function Game() {
     blockGridX,
     blockGridY,
     blockGridZ,
-    activeBlock,
     setBlockGridX,
     setBlockGridY,
     setBlockGridZ,
-    setActiveBlock,
     setDebugMode,
     setGameState,
     setDragPosition,
@@ -108,25 +105,26 @@ export function Game() {
         <BlocksRenderer
           orbitControlsRef={orbitControlsRef}
           blocks={gameState.nextBlocks}
-          activeBlock={activeBlock}
+          activeBlock={gameState.activeBlock}
           onBlockPickup={handleBlockPickup}
         />
-        {activeBlock !== null && gameState.nextBlocks[activeBlock] && (
-          <FloatingBlock
-            block={gameState.nextBlocks[activeBlock]}
-            onDrag={handleBlockDrag}
-            onDrop={handleBlockDrop}
-            gameState={gameState}
-            dragPosition={dragPosition}
-            interactionMode={interactionMode}
-            cursorPosition={{ x: blockGridX, y: blockGridY, z: blockGridZ }}
-            debugMode={debugMode}
-            mousePosition={mousePosition}
-            setMousePosition={setMousePosition}
-          />
-        )}
+        {gameState.activeBlock !== null &&
+          gameState.nextBlocks[gameState.activeBlock] && (
+            <FloatingBlock
+              block={gameState.nextBlocks[gameState.activeBlock]!}
+              onDrag={handleBlockDrag}
+              onDrop={handleBlockDrop}
+              gameState={gameState}
+              dragPosition={dragPosition}
+              interactionMode={interactionMode}
+              cursorPosition={{ x: blockGridX, y: blockGridY, z: blockGridZ }}
+              debugMode={debugMode}
+              mousePosition={mousePosition}
+              setMousePosition={setMousePosition}
+            />
+          )}
         {/* Debug axes - rendered at world level, not inside floating block */}
-        {activeBlock !== null &&
+        {gameState.activeBlock !== null &&
           interactionMode === "drag" &&
           debugMode !== "off" && (
             <DebugAxes

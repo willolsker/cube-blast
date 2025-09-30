@@ -6,12 +6,14 @@ export const getNextGameState = (
   gameState: GameState,
   blockGridX: number,
   blockGridY: number,
-  blockGridZ: number,
-  activeBlock: number
+  blockGridZ: number
 ) => {
   const newBoard = gameState.board.map((layer, z) =>
     layer.map((row, y) => row.map((cell, x) => cell))
   );
+
+  const activeBlock = gameState.activeBlock;
+  if (activeBlock === null) return gameState;
 
   const block = gameState.nextBlocks[activeBlock];
   if (!block) return gameState;
@@ -58,27 +60,27 @@ export const getNextGameState = (
     if (!canPlace) break;
   }
 
-  // Place the block at the specified position if valid
-  if (canPlace) {
-    for (let blockZ = 0; blockZ < blockDimensions.zDepth; blockZ++) {
-      for (let blockY = 0; blockY < blockDimensions.yHeight; blockY++) {
-        for (let blockX = 0; blockX < blockDimensions.xWidth; blockX++) {
-          if (block[blockZ]?.[blockY]?.[blockX]) {
-            const boardX = blockGridX + blockX;
-            const boardY = blockGridY + blockY;
-            const boardZ = blockGridZ + blockZ;
+  if (!canPlace) return gameState;
 
-            if (
-              boardX >= 0 &&
-              boardX < 8 &&
-              boardY >= 0 &&
-              boardY < 8 &&
-              boardZ >= 0 &&
-              boardZ < 8
-            ) {
-              if (newBoard[boardZ] && newBoard[boardZ][boardY]) {
-                newBoard[boardZ][boardY][boardX] = true;
-              }
+  // Place the block at the specified position if valid
+  for (let blockZ = 0; blockZ < blockDimensions.zDepth; blockZ++) {
+    for (let blockY = 0; blockY < blockDimensions.yHeight; blockY++) {
+      for (let blockX = 0; blockX < blockDimensions.xWidth; blockX++) {
+        if (block[blockZ]?.[blockY]?.[blockX]) {
+          const boardX = blockGridX + blockX;
+          const boardY = blockGridY + blockY;
+          const boardZ = blockGridZ + blockZ;
+
+          if (
+            boardX >= 0 &&
+            boardX < 8 &&
+            boardY >= 0 &&
+            boardY < 8 &&
+            boardZ >= 0 &&
+            boardZ < 8
+          ) {
+            if (newBoard[boardZ] && newBoard[boardZ][boardY]) {
+              newBoard[boardZ][boardY][boardX] = true;
             }
           }
         }
@@ -135,9 +137,12 @@ export const getNextGameState = (
     newNextBlocks = Array.from({ length: 3 }, () => getRandomBlock());
   }
 
+  const newActiveBlock = newNextBlocks.findIndex((block) => block !== null);
+
   return {
     board: newBoard,
     nextBlocks: newNextBlocks,
+    activeBlock: newActiveBlock,
   };
 };
 
@@ -146,4 +151,5 @@ export const createInitialGameState = (): GameState => ({
     Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => false))
   ),
   nextBlocks: Array.from({ length: 3 }, () => getRandomBlock()),
+  activeBlock: null,
 });

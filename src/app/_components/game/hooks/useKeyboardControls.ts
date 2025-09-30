@@ -7,11 +7,9 @@ export const useKeyboardControls = ({
   blockGridX,
   blockGridY,
   blockGridZ,
-  activeBlock,
   setBlockGridX,
   setBlockGridY,
   setBlockGridZ,
-  setActiveBlock,
   setDebugMode,
   setGameState,
   setDragPosition,
@@ -21,13 +19,9 @@ export const useKeyboardControls = ({
   blockGridX: number;
   blockGridY: number;
   blockGridZ: number;
-  activeBlock: number | null;
   setBlockGridX: (value: number | ((prev: number) => number)) => void;
   setBlockGridY: (value: number | ((prev: number) => number)) => void;
   setBlockGridZ: (value: number | ((prev: number) => number)) => void;
-  setActiveBlock: (
-    value: number | null | ((prev: number | null) => number | null)
-  ) => void;
   setDebugMode: (value: DebugMode | ((prev: DebugMode) => DebugMode)) => void;
   setGameState: (value: GameState) => void;
   setDragPosition: (value: { x: number; y: number; z: number } | null) => void;
@@ -36,8 +30,7 @@ export const useKeyboardControls = ({
     gameState: GameState,
     blockGridX: number,
     blockGridY: number,
-    blockGridZ: number,
-    selectedBlock: number
+    blockGridZ: number
   ) => GameState;
 }) => {
   useEffect(() => {
@@ -55,9 +48,13 @@ export const useKeyboardControls = ({
       // Block cycling with Tab instead of Space
       if (e.key === "Tab") {
         e.preventDefault(); // Prevent tab from moving focus
-        setActiveBlock((value) =>
-          value === null ? 0 : (value + 1) % gameState.nextBlocks.length
-        );
+        setGameState({
+          ...gameState,
+          activeBlock:
+            gameState.activeBlock === null
+              ? 0
+              : (gameState.activeBlock + 1) % gameState.nextBlocks.length,
+        });
       }
       // Y position controls
       if (e.key === " ") {
@@ -89,20 +86,19 @@ export const useKeyboardControls = ({
       if (e.key === "PageDown") {
         setBlockGridY((value) => Math.max(0, value - 1));
       }
-      if (e.key === "Enter" && activeBlock !== null) {
+      if (e.key === "Enter" && gameState.activeBlock !== null) {
         // Place the block using keyboard
         const newGameState = getNextGameState(
           gameState,
           blockGridX,
           blockGridY,
-          blockGridZ,
-          activeBlock
+          blockGridZ
         );
         setGameState(newGameState);
       }
-      if (e.key === "Escape" && activeBlock !== null) {
+      if (e.key === "Escape" && gameState.activeBlock !== null) {
         // Cancel drag
-        setActiveBlock(null);
+        setGameState({ ...gameState, activeBlock: null });
         setDragPosition(null);
         setInteractionMode("orbit");
       }
@@ -114,11 +110,9 @@ export const useKeyboardControls = ({
     blockGridX,
     blockGridY,
     blockGridZ,
-    activeBlock,
     setBlockGridX,
     setBlockGridY,
     setBlockGridZ,
-    setActiveBlock,
     setDebugMode,
     setGameState,
     setDragPosition,

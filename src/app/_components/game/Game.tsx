@@ -901,7 +901,128 @@ const FloatingBlock = ({
   const dragStartCursorRef = useRef<{ x: number; y: number; z: number } | null>(
     null
   );
+  const scrollOffsetRef = useRef<number>(0);
   const { xWidth, yHeight, zDepth } = calculateBlockDimensions(block);
+
+  // Track scroll offset changes
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  // Add wheel event listener for inward/outward movement while dragging
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      // Only handle scroll when in drag mode and actually dragging
+      if (interactionMode === "drag" && dragStartMouseRef.current) {
+        e.preventDefault();
+
+        // Calculate perspective-aware scroll sensitivity
+        const gameBoardCenter = new THREE.Vector3(
+          COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+          COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+          COORDINATE_SYSTEM.GAME_BOARD_CENTER
+        );
+        const distanceToCamera = camera.position.distanceTo(gameBoardCenter);
+        const fovRadians =
+          (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180);
+        const screenHeight = 2 * Math.tan(fovRadians / 2) * distanceToCamera;
+        const scrollSensitivity = screenHeight / 1000; // Adjust divisor for desired sensitivity
+
+        // Reverse direction: negative deltaY = away from camera (outward)
+        const scrollDelta = -e.deltaY * scrollSensitivity;
+        const newScrollOffset = scrollOffsetRef.current + scrollDelta;
+        scrollOffsetRef.current = newScrollOffset;
+        setScrollOffset(newScrollOffset);
+        console.log(
+          "Scroll offset:",
+          newScrollOffset,
+          "sensitivity:",
+          scrollSensitivity
+        );
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+    };
+  }, [interactionMode, camera]);
+
+  // Recalculate drag position when scroll offset or mouse position changes
+  useEffect(() => {
+    if (
+      interactionMode !== "drag" ||
+      !dragStartMouseRef.current ||
+      !dragStartCursorRef.current
+    ) {
+      return;
+    }
+
+    // Calculate mouse delta from drag start
+    const mouseDeltaX = mouse.x - dragStartMouseRef.current.x;
+    const mouseDeltaY = mouse.y - dragStartMouseRef.current.y;
+
+    // Use shared helper functions for consistent calculations
+    const gameBoardCenter = new THREE.Vector3(
+      COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+      COORDINATE_SYSTEM.GAME_BOARD_CENTER,
+      COORDINATE_SYSTEM.GAME_BOARD_CENTER
+    );
+
+    // Calculate screen projections
+    const screenProjections = calculateDragProjections(camera);
+
+    // Calculate mouse sensitivity
+    const sensitivityData = calculateMouseSensitivity(camera, gameBoardCenter);
+
+    // Calculate axis biasing using the mouse DELTA from drag start
+    const axisBiasing = calculateAxisBiasing(
+      mouseDeltaX,
+      mouseDeltaY,
+      sensitivityData.mouseSensitivity,
+      screenProjections
+    );
+
+    // Apply biased movement to world coordinates, starting from the drag start cursor position
+    let worldX = dragStartCursorRef.current.x + axisBiasing.biasedMovement.x;
+    let worldY = dragStartCursorRef.current.y + axisBiasing.biasedMovement.y;
+    let worldZ = dragStartCursorRef.current.z + axisBiasing.biasedMovement.z;
+
+    // Apply scroll offset along the camera's forward direction
+    if (scrollOffset !== 0) {
+      // Get camera's forward direction (looking away from camera)
+      const cameraForward = new THREE.Vector3();
+      camera.getWorldDirection(cameraForward);
+
+      // Apply scroll offset along camera forward direction
+      worldX += cameraForward.x * scrollOffset;
+      worldY += cameraForward.y * scrollOffset;
+      worldZ += cameraForward.z * scrollOffset;
+    }
+
+    const gridX = worldToGrid(worldX);
+    const gridY = worldToGrid(worldY);
+    const gridZ = worldToGrid(worldZ);
+    const clampedX = clampGrid(gridX);
+    const clampedY = clampGrid(gridY);
+    const clampedZ = clampGrid(gridZ);
+
+    console.log("useEffect drag update:", {
+      mouseDelta: { x: mouseDeltaX, y: mouseDeltaY },
+      scrollOffset,
+      world: { worldX, worldY, worldZ },
+      grid: { gridX, gridY, gridZ },
+      clamped: { clampedX, clampedY, clampedZ },
+    });
+
+    onDrag(clampedX, clampedY, clampedZ);
+  }, [
+    scrollOffset,
+    mousePosition,
+    interactionMode,
+    camera,
+    onDrag,
+    mouse.x,
+    mouse.y,
+  ]);
 
   // Check if current position is valid
   const isValidPosition = (() => {
@@ -991,9 +1112,6 @@ const FloatingBlock = ({
       }}
       onDrag={(e) => {
         console.log("DragControls onDrag event (Matrix4):", e);
-        console.log("Mouse position:", mouse);
-        console.log("Current cursor position:", cursorPosition);
-        console.log("Unified mouse position:", mousePosition);
 
         // If we don't have a drag start position, initialize it now
         if (!dragStartMouseRef.current || !dragStartCursorRef.current) {
@@ -1002,103 +1120,16 @@ const FloatingBlock = ({
         }
 
         // Update mouse position during dragging to keep grey dot following cursor
+        // The useEffect will handle the actual drag calculation
         setMousePosition({ x: mouse.x, y: mouse.y });
-
-        // Calculate mouse delta from drag start
-        const mouseDeltaX = mouse.x - dragStartMouseRef.current.x;
-        const mouseDeltaY = mouse.y - dragStartMouseRef.current.y;
-
-        // Use shared helper functions for consistent calculations
-        const gameBoardCenter = new THREE.Vector3(
-          COORDINATE_SYSTEM.GAME_BOARD_CENTER,
-          COORDINATE_SYSTEM.GAME_BOARD_CENTER,
-          COORDINATE_SYSTEM.GAME_BOARD_CENTER
-        );
-
-        // Calculate screen projections
-        const screenProjections = calculateDragProjections(camera);
-
-        // Calculate mouse sensitivity
-        const sensitivityData = calculateMouseSensitivity(
-          camera,
-          gameBoardCenter
-        );
-
-        // Calculate axis biasing using the mouse DELTA from drag start
-        const axisBiasing = calculateAxisBiasing(
-          mouseDeltaX,
-          mouseDeltaY,
-          sensitivityData.mouseSensitivity,
-          screenProjections
-        );
-
-        console.log("Drag calculation using shared helpers:", {
-          gameBoardCenter,
-          screenProjections,
-          sensitivityData,
-          axisBiasing,
-        });
-
-        // Debug: Store info for visual display
-        (window as any).debugDragInfo = {
-          center: gameBoardCenter,
-          screenProjections: {
-            screenXToWorldX: screenProjections.screenXToWorldX,
-            screenXToWorldY: screenProjections.screenXToWorldY,
-            screenXToWorldZ: screenProjections.screenXToWorldZ,
-            screenYToWorldX: screenProjections.screenYToWorldX,
-            screenYToWorldY: screenProjections.screenYToWorldY,
-            screenYToWorldZ: screenProjections.screenYToWorldZ,
-          },
-          mouseSensitivity: sensitivityData.mouseSensitivity,
-          axisBiasing,
-        };
-
-        // Apply biased movement to world coordinates, starting from the drag start cursor position
-        const worldX =
-          dragStartCursorRef.current.x + axisBiasing.biasedMovement.x;
-        const worldY =
-          dragStartCursorRef.current.y + axisBiasing.biasedMovement.y;
-        const worldZ =
-          dragStartCursorRef.current.z + axisBiasing.biasedMovement.z;
-
-        console.log("World coordinate calculation:", {
-          cursorPosition,
-          mouseMovement: { x: mouse.x, y: mouse.y },
-          mouseSensitivity: sensitivityData.mouseSensitivity,
-          screenProjections: {
-            screenXToWorldX: screenProjections.screenXToWorldX,
-            screenXToWorldY: screenProjections.screenXToWorldY,
-            screenXToWorldZ: screenProjections.screenXToWorldZ,
-            screenYToWorldX: screenProjections.screenYToWorldX,
-            screenYToWorldY: screenProjections.screenYToWorldY,
-            screenYToWorldZ: screenProjections.screenYToWorldZ,
-          },
-          calculatedWorld: { worldX, worldY, worldZ },
-        });
-
-        const gridX = worldToGrid(worldX);
-        const gridY = worldToGrid(worldY);
-        const gridZ = worldToGrid(worldZ);
-        const clampedX = clampGrid(gridX);
-        const clampedY = clampGrid(gridY);
-        const clampedZ = clampGrid(gridZ);
-
-        console.log(
-          "Simplified drag:",
-          { mouseX: mouse.x, mouseY: mouse.y },
-          { worldX, worldY, worldZ },
-          { gridX, gridY, gridZ },
-          { clampedX, clampedY, clampedZ }
-        );
-
-        onDrag(clampedX, clampedY, clampedZ);
       }}
       onDragEnd={() => {
         console.log("DragControls onDragEnd called");
-        // Reset drag start refs
+        // Reset drag start refs and scroll offset
         dragStartMouseRef.current = null;
         dragStartCursorRef.current = null;
+        scrollOffsetRef.current = 0;
+        setScrollOffset(0);
         onDrop();
       }}
       autoTransform={false}

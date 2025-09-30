@@ -897,6 +897,10 @@ const FloatingBlock = ({
 }) => {
   const { camera, raycaster, mouse } = useThree();
   const groupRef = useRef<THREE.Group>(null);
+  const dragStartMouseRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStartCursorRef = useRef<{ x: number; y: number; z: number } | null>(
+    null
+  );
   const { xWidth, yHeight, zDepth } = calculateBlockDimensions(block);
 
   // Check if current position is valid
@@ -974,14 +978,35 @@ const FloatingBlock = ({
 
   return interactionMode === "drag" ? (
     <DragControls
+      onDragStart={() => {
+        // Capture the initial mouse position and cursor position when drag starts
+        dragStartMouseRef.current = { x: mouse.x, y: mouse.y };
+        dragStartCursorRef.current = { ...cursorPosition };
+        console.log(
+          "Drag started at mouse:",
+          dragStartMouseRef.current,
+          "cursor:",
+          dragStartCursorRef.current
+        );
+      }}
       onDrag={(e) => {
         console.log("DragControls onDrag event (Matrix4):", e);
         console.log("Mouse position:", mouse);
         console.log("Current cursor position:", cursorPosition);
         console.log("Unified mouse position:", mousePosition);
 
+        // If we don't have a drag start position, initialize it now
+        if (!dragStartMouseRef.current || !dragStartCursorRef.current) {
+          dragStartMouseRef.current = { x: mouse.x, y: mouse.y };
+          dragStartCursorRef.current = { ...cursorPosition };
+        }
+
         // Update mouse position during dragging to keep grey dot following cursor
         setMousePosition({ x: mouse.x, y: mouse.y });
+
+        // Calculate mouse delta from drag start
+        const mouseDeltaX = mouse.x - dragStartMouseRef.current.x;
+        const mouseDeltaY = mouse.y - dragStartMouseRef.current.y;
 
         // Use shared helper functions for consistent calculations
         const gameBoardCenter = new THREE.Vector3(
@@ -999,10 +1024,10 @@ const FloatingBlock = ({
           gameBoardCenter
         );
 
-        // Calculate axis biasing using the current mouse position from DragControls
+        // Calculate axis biasing using the mouse DELTA from drag start
         const axisBiasing = calculateAxisBiasing(
-          mouse.x,
-          mouse.y,
+          mouseDeltaX,
+          mouseDeltaY,
           sensitivityData.mouseSensitivity,
           screenProjections
         );
@@ -1029,10 +1054,13 @@ const FloatingBlock = ({
           axisBiasing,
         };
 
-        // Apply biased movement to world coordinates
-        const worldX = cursorPosition.x + axisBiasing.biasedMovement.x;
-        const worldY = cursorPosition.y + axisBiasing.biasedMovement.y;
-        const worldZ = cursorPosition.z + axisBiasing.biasedMovement.z;
+        // Apply biased movement to world coordinates, starting from the drag start cursor position
+        const worldX =
+          dragStartCursorRef.current.x + axisBiasing.biasedMovement.x;
+        const worldY =
+          dragStartCursorRef.current.y + axisBiasing.biasedMovement.y;
+        const worldZ =
+          dragStartCursorRef.current.z + axisBiasing.biasedMovement.z;
 
         console.log("World coordinate calculation:", {
           cursorPosition,
@@ -1068,6 +1096,9 @@ const FloatingBlock = ({
       }}
       onDragEnd={() => {
         console.log("DragControls onDragEnd called");
+        // Reset drag start refs
+        dragStartMouseRef.current = null;
+        dragStartCursorRef.current = null;
         onDrop();
       }}
       autoTransform={false}

@@ -223,6 +223,35 @@ export function Game() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [gameState, cursorX, cursorZ, selectedBlock]);
 
+  useEffect(() => {
+    let dragStartX: number | null = null;
+    let dragStartZ: number | null = null;
+    const handleContextMenu = (e: MouseEvent) => {
+      // right click
+      e.preventDefault();
+      dragStartX = e.clientX;
+      dragStartZ = e.clientY;
+    };
+    const handleMouseUp = () => {
+      dragStartX = null;
+      dragStartZ = null;
+    };
+    const handleMouseMove = (e: MouseEvent) => {
+      if (dragStartX !== null && dragStartZ !== null) {
+        setCursorX(Math.floor((e.clientX - dragStartX) / 20));
+        setCursorZ(Math.floor((e.clientY - dragStartZ) / 20));
+      }
+    };
+    window.addEventListener("contextmenu", handleContextMenu);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => {
+      window.removeEventListener("contextmenu", handleContextMenu);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mousemove", handleMouseMove);
+    };
+  }, [gameState]);
+
   return (
     <div className="w-full h-screen">
       <Canvas>
@@ -260,10 +289,9 @@ const GameBoard = ({
           row.map((cell, x) => (
             <Cube
               key={`${x}-${y}-${z}`}
-              position={[x, 7 - y, z]}
+              position={[x, y, z]}
               boundingBoxDimensions={[8, 8, 8]}
               active={cell}
-              isBottomLayer={y === 0}
               selected={false}
             />
           ))
@@ -277,13 +305,11 @@ const Cube = ({
   position,
   boundingBoxDimensions = [0, 0, 0],
   active,
-  isBottomLayer,
   selected,
 }: {
   position: [number, number, number];
   boundingBoxDimensions: [number, number, number];
   active: boolean;
-  isBottomLayer: boolean;
   selected: boolean;
 }) => {
   // Solid cube for active positions
@@ -350,7 +376,6 @@ const BlockRenderer = forwardRef(
                   position={[x, y, z]}
                   boundingBoxDimensions={[xWidth, yHeight, zDepth]}
                   active={cell}
-                  isBottomLayer={y === 0}
                   selected={selected}
                 />
               ))

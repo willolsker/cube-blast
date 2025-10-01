@@ -1,10 +1,10 @@
 // Coordinate System Constants
 export const COORDINATE_SYSTEM = {
-  GRID_SIZE: 8,
+  GRID_SIZE: 5,
   GRID_MIN: 0,
-  GRID_MAX: 7,
+  GRID_MAX: 4,
   CUBE_SIZE: 0.9,
-  GAME_BOARD_CENTER: 3.5, // (GRID_SIZE - 1) / 2
+  GAME_BOARD_CENTER: 2, // (GRID_SIZE - 1) / 2
 } as const;
 
 // Coordinate Helper Functions

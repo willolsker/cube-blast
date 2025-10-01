@@ -2,6 +2,7 @@ import { useRef } from "react";
 import * as THREE from "three";
 import { GameBoardBoundingBox } from "./GameBoardBoundingBox";
 import { Cube } from "./Cube";
+import { COORDINATE_SYSTEM } from "../../constants/coordinates";
 
 export const GameBoard = ({ board }: { board: boolean[][][] }) => {
   const groupRef = useRef<THREE.Group>(null);
@@ -18,7 +19,11 @@ export const GameBoard = ({ board }: { board: boolean[][][] }) => {
             <Cube
               key={`${x}-${y}-${z}`}
               position={[x, y, z]}
-              boundingBoxDimensions={[8, 8, 8]}
+              boundingBoxDimensions={[
+                COORDINATE_SYSTEM.GRID_SIZE,
+                COORDINATE_SYSTEM.GRID_SIZE,
+                COORDINATE_SYSTEM.GRID_SIZE,
+              ]}
               active={cell}
               selected={false}
             />

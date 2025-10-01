@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
 import { COORDINATE_SYSTEM } from "./constants/coordinates";
@@ -14,6 +14,15 @@ import { DebugAxes } from "./components/Debug/DebugAxes";
 import { ModeIndicator } from "./components/UI/ModeIndicator";
 import { Score } from "./components/UI/Score";
 import { ArrowKeyIndicators } from "./components/UI/ArrowKeyIndicators";
+import { GameOver } from "./components/UI/GameOver";
+import { RestartButton } from "./components/UI/RestartButton";
+import {
+  saveGameState,
+  loadGameState,
+  clearGameState,
+  getHighScore,
+  saveHighScore,
+} from "./utils/storage";
 import type {
   GameState,
   InteractionMode,
@@ -25,6 +34,7 @@ export function Game() {
   const [gameState, setGameState] = useState<GameState>(
     createInitialGameState()
   );
+  const [highScore, setHighScore] = useState(0);
   const orbitControlsRef = useRef<any>(null);
 
   const [blockGridX, setBlockGridX] = useState(0);
@@ -38,6 +48,38 @@ export function Game() {
     x: 0,
     y: 0,
   });
+
+  // Load game state and high score from localStorage on mount
+  useEffect(() => {
+    const savedState = loadGameState();
+    if (savedState) {
+      setGameState(savedState);
+    }
+    setHighScore(getHighScore());
+  }, []);
+
+  // Save game state to localStorage whenever it changes
+  useEffect(() => {
+    saveGameState(gameState);
+
+    // Update high score if current score is higher
+    if (gameState.score > highScore) {
+      setHighScore(gameState.score);
+      saveHighScore(gameState.score);
+    }
+  }, [gameState, highScore]);
+
+  // Handle restart
+  const handleRestart = () => {
+    const newState = createInitialGameState();
+    setGameState(newState);
+    clearGameState(); // Clear saved game state
+    setBlockGridX(0);
+    setBlockGridY(0);
+    setBlockGridZ(0);
+    setDragPosition(null);
+    setInteractionMode("orbit");
+  };
 
   // Handle block pickup
   const handleBlockPickup = (blockIndex: number) => {
@@ -96,14 +138,22 @@ export function Game() {
 
   return (
     <div className="w-full h-screen relative">
+      {/* Game Over overlay */}
+      {gameState.gameOver && (
+        <GameOver score={gameState.score} onRestart={handleRestart} />
+      )}
+
       {/* Score display */}
-      <Score score={gameState.score} />
+      <Score score={gameState.score} highScore={highScore} />
+
+      {/* Restart button */}
+      <RestartButton onRestart={handleRestart} />
 
       {/* Mode indicator */}
       <ModeIndicator interactionMode={interactionMode} debugMode={debugMode} />
 
       <Canvas
-        camera={{ position: [12, 10, 12], fov: 70 }}
+        camera={{ position: [8, 7, 8], fov: 70 }}
         onContextMenu={handleRightClick}
       >
         <ambientLight intensity={0.5 * Math.PI} />

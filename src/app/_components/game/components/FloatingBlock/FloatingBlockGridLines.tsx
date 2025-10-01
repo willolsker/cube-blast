@@ -81,11 +81,11 @@ export const FloatingBlockGridLines = ({
               // Check if there's a collision at this position
               if (
                 boardX >= 0 &&
-                boardX < 8 &&
+                boardX < COORDINATE_SYSTEM.GRID_SIZE &&
                 boardY >= 0 &&
-                boardY < 8 &&
+                boardY < COORDINATE_SYSTEM.GRID_SIZE &&
                 boardZ >= 0 &&
-                boardZ < 8 &&
+                boardZ < COORDINATE_SYSTEM.GRID_SIZE &&
                 gameState.board[boardZ]?.[boardY]?.[boardX]
               ) {
                 return true;

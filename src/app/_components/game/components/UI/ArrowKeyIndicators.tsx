@@ -69,12 +69,12 @@ export function ArrowKeyIndicators({
   return (
     <group ref={arrowGroupRef}>
       {/* Up Arrow - top row, center */}
-      <Arrow position={[0, 0, -keySpacing]} label="↑" />
+      <Arrow position={[0, 0, -keySpacing]} label="←" rotation={-Math.PI / 2} />
 
       {/* Bottom row: Left, Down, Right */}
-      <Arrow position={[-keySpacing, 0, 0]} label="←" />
-      <Arrow position={[0, 0, 0]} label="↓" />
-      <Arrow position={[keySpacing, 0, 0]} label="→" />
+      <Arrow position={[-keySpacing, 0, 0]} label="←" rotation={0} />
+      <Arrow position={[0, 0, 0]} label="←" rotation={Math.PI / 2} />
+      <Arrow position={[keySpacing, 0, 0]} label="←" rotation={Math.PI} />
     </group>
   );
 }
@@ -82,9 +82,11 @@ export function ArrowKeyIndicators({
 function Arrow({
   position,
   label,
+  rotation = 0,
 }: {
   position: [number, number, number];
   label: string;
+  rotation?: number;
 }) {
   return (
     <group position={position}>
@@ -103,7 +105,7 @@ function Arrow({
       {/* Arrow symbol on top */}
       <Text
         position={[0, 0.33, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
+        rotation={[-Math.PI / 2, 0, rotation]}
         fontSize={0.25}
         color="#ffffff"
         anchorX="center"

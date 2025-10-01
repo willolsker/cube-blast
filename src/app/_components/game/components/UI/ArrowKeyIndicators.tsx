@@ -54,8 +54,13 @@ export function ArrowKeyIndicators({
       camera.position.z - center
     );
 
+    // Snap to nearest π/2 and counter-rotate
+    // This keeps the arrows aligned with the cardinal directions
+    const counterRotation =
+      Math.round(cameraAngle / (Math.PI / 2)) * (Math.PI / 2);
+
     // Apply opposite rotation, accounting for board's initial 45-degree rotation
-    arrowGroupRef.current.rotation.y = -cameraAngle + Math.PI / 4;
+    arrowGroupRef.current.rotation.y = counterRotation;
   });
 
   // Arrow key spacing in physical keyboard layout (inverted-T pattern)

@@ -194,6 +194,7 @@ export function Game() {
         <OrbitControls
           ref={orbitControlsRef}
           enableZoom={false}
+          enablePan={false}
           enabled={interactionMode === "orbit"}
           target={[
             COORDINATE_SYSTEM.GAME_BOARD_CENTER,

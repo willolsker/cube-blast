@@ -102,16 +102,16 @@ export const useKeyboardControls = ({
         // Arrow key controls (camera-relative, single axis)
         if (e.key === "ArrowUp") {
           const dir = getDominantDirection(forward);
-          applyMovement(-dir.x, dir.z);
+          applyMovement(dir.x, dir.z);
         } else if (e.key === "ArrowDown") {
           const dir = getDominantDirection(forward);
-          applyMovement(dir.x, -dir.z);
+          applyMovement(-dir.x, -dir.z);
         } else if (e.key === "ArrowRight") {
           const dir = getDominantDirection(right);
-          applyMovement(dir.x, -dir.z);
+          applyMovement(dir.x, dir.z);
         } else if (e.key === "ArrowLeft") {
           const dir = getDominantDirection(right);
-          applyMovement(-dir.x, dir.z);
+          applyMovement(-dir.x, -dir.z);
         }
       }
 
